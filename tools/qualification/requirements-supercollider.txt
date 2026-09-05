@@ -1,0 +1,2 @@
+supriya==26.9b0
+numpy==2.5.2
