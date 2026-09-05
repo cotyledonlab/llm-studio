@@ -1,0 +1,8 @@
+command: scripts/probe-ardour-mcp.sh
+endpoint: http://127.0.0.1:4820/mcp
+exit_status: 1
+curl_error: failed to connect to 127.0.0.1 port 4820
+result: unreachable-or-initialization-failed
+
+Interpretation: no actual MCP initialization or tools/list response was available.
+This is failure evidence, not a passing schema capture.
