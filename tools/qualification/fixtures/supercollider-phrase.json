@@ -1,0 +1,22 @@
+{
+  "job_id": "sc-nrt-qualification-001",
+  "seed": 1729,
+  "sample_rate": 48000,
+  "start_s": 0.25,
+  "duration_s": 1.5,
+  "tail_s": 0.75,
+  "instrument": {
+    "id": "qualified-sine-v1",
+    "state": {
+      "amplitude": 0.2,
+      "attack_s": 0.005,
+      "release_s": 0.3
+    }
+  },
+  "performance": [
+    {"at_s": 0.0, "frequency_hz": 220.0, "release_s": 0.3},
+    {"at_s": 0.5, "frequency_hz": 277.1826, "release_s": 0.3},
+    {"at_s": 1.0, "frequency_hz": 329.6276, "release_s": 0.65}
+  ],
+  "output": "/tmp/llm-studio-sc-qualification.wav"
+}
