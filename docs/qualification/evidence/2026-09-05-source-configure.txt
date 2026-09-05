@@ -1,0 +1,11 @@
+source_repository: https://github.com/Ardour/ardour.git
+source_commit: ba38f08ea4e63ae3b8c39405e61239aa7d490f2a
+source_commit_date: 2026-09-04T19:13:49+02:00
+command: python3 ./waf configure
+host: arm64 macOS 26.5.2 (25F84)
+compiler: Apple clang 21.0.0
+python: 3.14.6
+exit_status: 1
+last_successful_check: dlopen in dlfcn.h
+first_failing_check: boost library >= 1.68 not found
+result: configuration failed; no executable or application bundle produced
