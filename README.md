@@ -8,6 +8,7 @@ A producer-led studio with agent session musicians and an engineer. Agents commu
 
 - [Product and engineering specification](SPEC.md) — requirements, architecture, contracts, manual-control rules and acceptance matrix.
 - [Implementation plan](docs/IMPLEMENTATION_PLAN.md) — epics, dependency map and exact next tasks.
+- [New-agent handoff](HANDOFF.md) — verified current state, operating boundaries and the issue #9 assignment.
 - [Issues](https://github.com/cotyledonlab/llm-studio/issues) — 7 epics and 24 detailed implementation issues.
 - **First task:** [adopt and automate the existing REAPER controller](https://github.com/cotyledonlab/llm-studio/issues/9).
 
