@@ -90,6 +90,22 @@ python3 tools/qualification/reaper_studio.py --run     # real disposable tab
 python3 tools/qualification/reaper_audio_compare.py /path/printed/by/runner
 ```
 
+For installed-bridge readback, use the pinned controller's Python environment:
+
+```sh
+PYTHONPATH=src /absolute/reaper-controller/.venv/bin/python \
+  tools/qualification/reaper_adapter_probe.py \
+  --controller /absolute/reaper-controller --resource /absolute/REAPER/resource \
+  --output /absolute/new-evidence.json
+```
+
+This captures one read-only session/mixer/FX observation and refuses to replace
+an existing evidence file. `--manual-fader` captures before/after observations
+with a terminal pause for the producer, rejecting a changed session/token.
+It never declares the acceptance gate passed. Follow the
+[remaining acceptance checklist](../../docs/qualification/reaper-producer-checklist.md)
+for installed-profile, restart, OSC, import and human listening evidence.
+
 The live runner requires stopped transport, creates a new disposable tab and
 restores the original project selection. It leaves its tab/files for inspection.
 Render `baseline.RPP` and `processed.RPP` with the upstream controller's

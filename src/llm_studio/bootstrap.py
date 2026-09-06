@@ -97,6 +97,11 @@ def _controller_identity(controller_path: Path) -> str:
     return commit
 
 
+def validate_controller_checkout(controller_path: Path) -> str:
+    """Validate and return the pinned controller commit for read-only probes."""
+    return _controller_identity(Path(controller_path))
+
+
 def _safe_target(resource_path: Path, relative_path: str) -> Path:
     """Resolve a managed target without following a symlink outside resource."""
     if Path(relative_path).is_absolute() or ".." in Path(relative_path).parts:

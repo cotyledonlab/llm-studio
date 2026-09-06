@@ -4,6 +4,32 @@ Updated: 2026-09-06. Repository: `cotyledonlab/llm-studio`.
 Resume branch: `feat/reaper-studio-bootstrap`.
 Draft PR: [#32](https://github.com/cotyledonlab/llm-studio/pull/32).
 
+## Resume preparation — 2026-09-06
+
+Fetched and confirmed the existing branch is aligned with origin; #9 is open
+and #32 is still draft. Read-only readiness again passed. Live `hello` returned
+16 tracks/count 73; studio discovery still returns `UNKNOWN_OP`. Do not merge
+the PR merely to deploy for qualification: test from this feature branch first.
+
+Fresh **unapplied** current-profile and clean-profile plans, plus an upstream
+ReaSynth project fixture, are at
+`/private/tmp/llm-studio-reaper/resume-20260906/`. Details are in the qualification
+report. The producer was asked to save and quit REAPER before installation;
+no stopped-window confirmation has been received at this point. Do not infer
+confirmation from elapsed time. Recheck readiness and regenerate stale plans
+before applying. No live project/configuration/daemon mutation occurred.
+
+Two Luna subagents prepared a read-only installed-adapter evidence probe and
+[producer acceptance checklist](docs/qualification/reaper-producer-checklist.md).
+The probe is for observing installed capability and collecting fader evidence;
+it cannot substitute for the remaining real import/mixer/OSC/restart checks or
+producer listening. Use the checklist to continue the same #9 gate, not #10.
+
+Validation of this preparation: 35 studio tests passed with the actual pinned
+checkout enabled. The new probe's real installed-bridge run recorded
+`UnsupportedReaperCapability: UNKNOWN_OP` in local `installed-probe.json`.
+The default probe is noninteractive; `--manual-fader` adds a terminal pause.
+
 ## Implementation continuation — 2026-09-06
 
 Work progressed on `feat/reaper-studio-bootstrap`. Read

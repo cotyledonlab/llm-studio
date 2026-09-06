@@ -65,6 +65,44 @@ Issue #9 remains open until its real acceptance evidence exists. Issues #10,
 #11 and the coordinator remain dependent work. Loading/reloading a ReaScript
 may need a precise producer action; do not automate the DAW GUI to bypass it.
 
+## Resume readiness — 2026-09-06
+
+Fetched the existing feature branch; local and remote were aligned with no
+local edits. Issue #9 remains open and PR #32 remains draft. The adjacent
+controller remains clean at the pinned commit.
+
+Repeated `doctor` and `status`: overall OK, daemon alive, queues present with
+zero orphans. Read-only live `hello` returned 16 tracks and state-change count
+73; `studio.session_snapshot` again returned `UNKNOWN_OP`. This confirms the
+installed studio extension is still the blocker, not a missing controller.
+These reads do not establish OSC round-trip health.
+
+Fresh, unapplied bootstrap previews are under
+`/private/tmp/llm-studio-reaper/resume-20260906/`:
+
+- `profile-plan.json`: replace the bridge, add the studio handler, retain the
+  matching OSC file and existing INI configuration.
+- `clean-plan.json`: install bridge, handler, OSC file and INI into the empty
+  `clean-profile/` directory. No process-detection override was used.
+- `adapter-session.RPP`: upstream `create --template song` fixture with one
+  named ReaSynth MIDI track. File readback confirms its content; it has not
+  been loaded and does not yet prove nonempty live FX discovery.
+
+The installed binary's command-line usage documents `-cfgfile file.ini` with
+an absolute path as an alternate resource directory, plus file/script execution
+in argument order. This prepares a supported clean-profile launch path; it is
+not yet observed startup evidence. A producer save/quit window was requested
+before installation. No live configuration, project or daemon was changed.
+
+The new read-only `reaper_adapter_probe.py` was exercised through the actual
+pinned Python controller. It exited 1 with `UnsupportedReaperCapability:
+UNKNOWN_OP` and saved failed evidence to `installed-probe.json` in the same
+temporary directory. It did not prompt for fader movement or report a pass.
+The complete studio suite with `REAPER_CONTROLLER_CHECKOUT` set passed
+**35 tests in 0.58 seconds**, including pinned-resource install/rollback and
+the new probe's evidence preservation, timeout and session-change checks.
+The unchanged upstream suite was not rerun in this resume session.
+
 ## Implemented and verified in this slice
 
 The safe bootstrap CLI and adapter are documented in
