@@ -1,0 +1,10 @@
+{
+  "repository": "https://github.com/cotyledonlab/reaper-controller",
+  "commit": "fd56d0008ffa5fba25cc58a70e5ae632c80b4c16",
+  "package": "reaper-controller",
+  "package_version": "0.1.0",
+  "declared_license": "MIT",
+  "license_evidence": "pyproject.toml at the pinned commit; no standalone LICENSE file",
+  "distribution_status": "Private integration only; resolve upstream copyright notice and outgoing studio licence before distribution.",
+  "reuse": "External checkout plus bounded studio handler; original file-drop transport, OSC and rendering remain owned by reaper-controller."
+}

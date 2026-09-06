@@ -4,6 +4,10 @@ A producer-led studio with agent session musicians and an engineer. Agents commu
 
 **Status:** REAPER is the selected DAW direction. SuperCollider NRT and Pedalboard/Dexed rendering have been qualified; the integrated REAPER Gate A remains to be completed.
 
+Issue #9 now has a [bootstrap CLI and thin adapter](adapters/reaper/README.md),
+with [native handler and rendered audio evidence](docs/qualification/reaper-environment.md).
+Installed-profile/bridge-restart and producer-fader acceptance remain open.
+
 ## Start here
 
 - [Product and engineering specification](SPEC.md) — requirements, architecture, contracts, manual-control rules and acceptance matrix.
