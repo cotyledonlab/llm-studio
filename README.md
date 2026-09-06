@@ -2,28 +2,28 @@
 
 A producer-led studio with agent session musicians and an engineer. Agents communicate through native software interfaces; the producer retains the DAW's mixer, processing controls and editable automation.
 
-**Status:** specification and implementation backlog only. No studio runtime or backend qualification has been completed in this repository.
+**Status:** REAPER is the selected DAW direction. SuperCollider NRT and Pedalboard/Dexed rendering have been qualified; the integrated REAPER Gate A remains to be completed.
 
 ## Start here
 
 - [Product and engineering specification](SPEC.md) — requirements, architecture, contracts, manual-control rules and acceptance matrix.
 - [Implementation plan](docs/IMPLEMENTATION_PLAN.md) — epics, dependency map and exact next tasks.
-- [Issues](https://github.com/cotyledonlab/llm-studio/issues) — 7 epics and 23 detailed implementation issues.
-- **First task:** [qualify the no-purchase Ardour build and discover its real APIs](https://github.com/cotyledonlab/llm-studio/issues/8).
+- [Issues](https://github.com/cotyledonlab/llm-studio/issues) — 7 epics and 24 detailed implementation issues.
+- **First task:** [adopt and automate the existing REAPER controller](https://github.com/cotyledonlab/llm-studio/issues/9).
 
 ## The experience
 
-Describe an eight-bar arrangement. Hear alternative drum, bass and keys performances. Choose takes. Mix and draw automation yourself in Ardour. Ask an agent to revise the drums without losing your bass level or keys automation. Save, reopen and export.
+Describe an eight-bar arrangement. Hear alternative drum, bass and keys performances. Choose takes. Mix and draw automation yourself in REAPER. Ask an agent to revise the drums without losing your bass level or keys automation. Save, reopen and export.
 
 ## Architecture direction
 
-- **Ardour:** candidate native mixer/timeline, conditional on real macOS qualification. Investigate its experimental native MCP surface before creating another connector.
+- **REAPER:** selected mixer/timeline. Reuse the proven `reaper-controller` bridge, OSC, MIDI and project-file lanes; automate its safe one-time setup instead of building another connector.
 - **SuperCollider:** reuse the existing synthesis connector for background rendering.
-- **Python renderer:** qualify Pedalboard first; evaluate DawDreamer only if needed. Select one production plugin worker.
+- **Python renderer:** Pedalboard with Dexed is the selected initial plugin worker; evaluate DawDreamer only after a concrete Pedalboard failure.
 - **Local coordinator:** one writer for approved session changes; bounded parallel musician generation and isolated render jobs.
 - **Instrument catalogue:** a small qualified kit/bass/keys baseline, with programmatic state recall and clear asset provenance.
 
-No agent-driven GUI automation and no mandatory paid DAW licence. Ardour's free source-build route must be made practical on the target Mac; paid official builds are optional conveniences, not the baseline. Model inference and optional sounds are separate costs.
+No agent-driven GUI automation. A paid REAPER licence is an accepted studio prerequisite; model inference, plugins, sample content and other optional sounds remain separately visible costs. Plugin installation is catalogue provisioning: agents may install only producer-approved, pinned packages with licence/provenance checks and post-install qualification, never arbitrary binaries during a take.
 
 ## Delivery gates
 
@@ -31,7 +31,7 @@ No agent-driven GUI automation and no mandatory paid DAW licence. Ardour's free 
 2. **Gate B:** prove sound rendering, state recall, alignment and cancellation.
 3. **Gate C:** hear a useful producer-led musical workflow before expanding infrastructure.
 
-All initial issues are open. Documentation of a native API does not prove that the installed build supports every required capability.
+The Ardour investigation is retained as a historical no-go. Existing `reaper-controller` evidence accelerates Gate A but does not automatically prove the studio-specific automation, conflict and take-replacement contracts.
 
 ## Scope
 

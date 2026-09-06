@@ -29,5 +29,5 @@ automation requirement that Pedalboard demonstrably cannot satisfy.
 
 Workers must pin and hash the host, plugin binary, and patch state. Controller
 support is opt-in per instrument mapping. Native plugins run in disposable
-processes, and a crash or timeout must never affect Ardour. Rendered timbre
+processes, and a crash or timeout must never affect REAPER. Rendered timbre
 automation remains baked; only performance and patch state enable revision.

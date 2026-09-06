@@ -1,8 +1,8 @@
 # LLM Studio — Product and Engineering Specification
 
-Version: 0.1 · Date: 2026-09-04 · Owner: John / cotyledonlab
+Version: 0.2 · Date: 2026-09-06 · Owner: John / cotyledonlab
 
-Status: Proposed implementation baseline. No connector, backend compatibility, or acceptance result is claimed as implemented by this document.
+Status: Revised implementation baseline. Rendering qualifications are complete; REAPER integration and the end-to-end acceptance gates remain open.
 
 Repository: [cotyledonlab/llm-studio](https://github.com/cotyledonlab/llm-studio).
 
@@ -18,7 +18,7 @@ The primary experience is: describe the music, receive playable takes, select an
 
 ### Confirmed requirements
 
-- No mandatory REAPER licence, trial expiry, or paid DAW entitlement in the baseline workflow. The stated REAPER limitation is licensing, not its technical integration.
+- REAPER is the selected DAW, and its paid licence is an accepted studio prerequisite.
 - Retain direct human control over mix parameters and track automation.
 - Agent operation must not use computer-use automation.
 - Support multiple functional agents with distinct musical/engineering responsibilities.
@@ -30,8 +30,8 @@ The primary experience is: describe the music, receive playable takes, select an
 
 - Initial host: John's Apple Silicon Mac, with a supported pinned OS/audio setup. Linux is a later supported platform, not a prerequisite imposed on the user.
 - The first workflow is asynchronous production and short rendered auditions. Low-latency live jamming is a later project.
-- Third-party instruments are installed and qualified deliberately; agents do not install an arbitrary plugin during a take.
-- Free baseline means no mandatory software licence purchase or render-service subscription. Model inference, electricity, storage and optional premium sounds are separate costs and must be visible.
+- Third-party instruments are provisioned and qualified deliberately; agents never install an arbitrary plugin during a take.
+- REAPER, model inference, storage and optional sound costs must be visible separately. A free qualified instrument baseline remains desirable, but no-purchase DAW operation is no longer a requirement.
 - Requirements below are binding for this proposal; backend choices remain conditional on the feasibility gates. A failed gate must not silently weaken the manual-control or no-computer-use requirements.
 
 ## 3. First useful release
@@ -59,45 +59,45 @@ Success is hearing a useful arrangement while retaining practical control of the
 
 | Concern | Initial decision | Rationale / boundary |
 |---|---|---|
-| Human mixer and timeline | Ardour, conditional on Gate A | Native DAW mixing and automation; open-source foundation. |
-| DAW agent interface | Qualify native Ardour MCP first; OSC and a small in-process adapter only for proven gaps | Avoid building another generic connector unnecessarily. |
-| Existing synthesis | SuperCollider connector | Preserve working investment; use isolated render jobs. |
-| Additional plugin renderer | Qualify Pedalboard first, DawDreamer as the alternative | Pick one production worker after a bake-off; do not implement both full integrations initially. |
+| Human mixer and timeline | REAPER, conditional on the revised Gate A | John accepts its licence cost; existing integration evidence makes it the practical editable DAW. |
+| DAW agent interface | Adopt `reaper-controller` behind a thin studio adapter | Reuse its ReaScript file bridge, OSC, MIDI, RPP and headless-render lanes instead of starting another connector. |
+| Existing synthesis | Qualified SuperCollider NRT pattern | Reuse the adjacent connector's mechanics and SynthDefs selectively, not its current API unchanged. |
+| Additional plugin renderer | Pedalboard with Dexed | Real restart/render evidence passed; consider DawDreamer only after a concrete requirement fails. |
 | Coordinator | Small local service, proposed TypeScript | Own jobs, approvals, revisions and persistence; models remain replaceable. |
 | Audio workers | Python / existing SuperCollider process | Keep model latency and failures outside the audio callback. |
 | Persistence | SQLite plus immutable local assets and native DAW session | No distributed database or cloud dependency for the first release. |
 | Agent interface | Semantic MCP tools over the coordinator | Workers receive bounded jobs; only coordinator may write accepted session changes. |
-| Producer interface | Ardour plus a minimal take/proposal view | Do not build a replacement mixer, piano roll or automation editor. |
+| Producer interface | REAPER plus a minimal take/proposal view | Do not build a replacement mixer, piano roll or automation editor. |
 
-### 4.1 Ardour rationale and current evidence
+### 4.1 REAPER rationale and current evidence
 
-Ardour documents editable automation for gain, pan, mute, trim and processor parameters [S1]. Its manual also describes an experimental native MCP HTTP surface with session, track, plugin and MIDI editing operations [S2]. This is promising evidence, not proof that the feature is included in the installed macOS build or supplies every operation needed here.
+The Ardour investigation ended in a documented no-go on the target Mac: no runnable no-purchase build was produced, and essential native operations could not be qualified. John has accepted REAPER's licence cost because prior LLM-assisted results and the existing controller justify the practical value.
 
-Before writing a custom adapter, capture the installed build identity and actual tool schemas. Native automation-envelope read/write, external edit notifications, audio import and final export must each be demonstrated. They must not be inferred from the existence of fader setters or MIDI tools.
+The adjacent `reaper-controller` already has observed REAPER 7.79/macOS-arm64 evidence for a deferred Lua bridge, exact mixer/FX readback, OSC transport and telemetry, MIDI insertion, RPP generation/reading, and headless rendering. This is strong reuse evidence, not automatic completion of LLM Studio Gate A. Envelope range read/write, external-edit freshness, atomic conflict application, mix-preserving take replacement, safe undo and the complete reopen/export tracer still require real qualification.
 
-Ardour is free from source; its official ready-to-run distributions generally require payment [S5]. The zero-purchase macOS baseline therefore includes a reproducible source build, or a trustworthy no-charge distribution if one can be verified. If build/tool availability makes this impractical, report the failed gate and revisit the choice. A paid download may be offered as an optional convenience, never disguised as mandatory or silently substituted.
+Adopt the controller as a versioned dependency or deliberately move a bounded adapter into this repository with provenance. Do not fork its protocols casually or build a second generic REAPER connector.
 
 ### 4.2 Integration boundary
 
-Use native APIs even when Ardour is running with its GUI visible. Headless DAW execution is not required. What matters is that agents need no mouse, keyboard focus or screen interpretation.
+Use REAPER's background interfaces even when its GUI is visible. Headless interactive operation is not required; agents must need no mouse, keyboard focus or screen interpretation.
 
-Ardour's Lua contexts differ: editor actions/hooks run in the GUI thread; session/DSP scripts operate in realtime contexts with restrictions [S3]. No socket polling, file reads, inference, allocation-heavy parsing or region/track creation may be added to a realtime callback. A custom IPC adapter, if needed, must dispatch bounded operations onto the appropriate non-realtime context using a mechanism validated in the actual build.
+The primary semantic lane is the existing deferred ReaScript Lua file-drop bridge. OSC is reserved for transport, telemetry and other high-rate controls; RPP files and `-renderproject` handle bulk authoring and offline verification. A request is not successful until the relevant state is observed back. No model call, network wait or unbounded work belongs in an audio callback.
 
-OSC gain/mode support is not equivalent to complete automation-envelope editing [S4]. The experimental web surface also must not be treated as a complete alternative mixer/plugin API [S6].
+Studio bootstrap may copy approved scripts, create bridge queues and install deterministic configuration from a reviewed plan. It must back up changed files, be idempotent, refuse changes while unsafe, and report any step that still needs the producer inside REAPER. Setup automation must not become GUI automation.
 
 ### 4.3 Rendering boundary
 
-Pedalboard documents MIDI rendering through VST3/AU instruments and programmatic effects [S7]. DawDreamer documents processor graphs, MIDI, automation and rendering [S8]. Gate B selects the smallest backend satisfying the initial instrument and state-recall tests.
+Pedalboard documents MIDI rendering through VST3/AU instruments and programmatic effects [S3]. DawDreamer documents processor graphs, MIDI, automation and rendering [S4]. Gate B selects the smallest backend satisfying the initial instrument and state-recall tests.
 
-Default accepted tracks contain dry or intentionally sound-designed stems. Mix gain, pan, sends and editable mix automation remain in Ardour. Timbre-changing instrument automation may be baked into an audition stem, but the performance and patch state must be retained so it can be rendered again. The UI must distinguish this from directly editable DAW automation.
+Default accepted tracks contain dry or intentionally sound-designed stems. Mix gain, pan, sends and editable mix automation remain in REAPER. Timbre-changing instrument automation may be baked into an audition stem, but the performance and patch state must be retained so it can be rendered again. The UI must distinguish this from directly editable DAW automation.
 
-Do not claim that a stem permits editing a rendered synth filter without rerendering. Later qualification may allow an instrument to run natively in Ardour with its automation exposed there.
+Do not claim that a stem permits editing a rendered synth filter without rerendering. Later qualification may allow an instrument to run natively in REAPER with its automation exposed there.
 
 ## 5. Component relationships
 
 ```mermaid
 flowchart TD
-  P["John: producer"] --> D["Ardour mixer and automation"]
+  P["John: producer"] --> D["REAPER mixer and automation"]
   P --> C["Studio coordinator"]
   C --> A["Director and musician agents"]
   A --> W["Isolated render workers"]
@@ -117,7 +117,7 @@ There is no duplicated, independently writable mirror of the DAW mix.
 
 | Data | Authority | Coordinator behaviour |
 |---|---|---|
-| Current audible mix, routing, plugin parameters and automation | Native Ardour session | Observe and version relevant state; apply approved changes through adapter. |
+| Current audible mix, routing, plugin parameters and automation | Native REAPER session | Observe and version relevant state; apply approved changes through adapter. |
 | Musical brief and accepted structural plan | Coordinator arrangement revision | Validate generation against revision; reconcile intentional DAW changes. |
 | Generated performances and alternate takes | Immutable studio assets | Never overwrite an accepted take in place. |
 | Instrument installation/capability information | Local qualified catalogue | Store exact versions, hashes and validation status. |
@@ -213,11 +213,19 @@ Each instrument entry contains:
 - Qualification evidence for load, render, save/restore, cancellation and process restart.
 - Short searchable audition examples rendered with consistent input phrases.
 
-Candidates: SuperCollider [S9], Surge XT [S10], sfizz with qualified SFZ libraries [S11], FluidSynth with licensed SoundFonts [S12], and VSCO CE for an initial orchestral exploration [S13]. These are options, not mandatory simultaneous integrations.
+Candidates: SuperCollider [S5], Surge XT [S6], sfizz with qualified SFZ libraries [S7], FluidSynth with licensed SoundFonts [S8], and VSCO CE for an initial orchestral exploration [S9]. These are options, not mandatory simultaneous integrations.
 
 Search returns a small candidate set and auditions. Do not send thousands of preset descriptions into every agent context. A producer's chosen sound can be locked for subsequent arrangement revisions.
 
 The renderer's GPL or other licence does not establish the sample library's licence. Free-of-charge content is not automatically redistributable. Store provenance and attribution; do not commit commercial or unlicensed samples to the repo.
+
+### 10.1 Catalogue provisioning
+
+Agent-assisted plugin setup is future scope, but it is a governed supply-chain workflow rather than an open-ended tool call. A provisioning plan names an approved catalogue entry, pinned source and version, expected hashes/signatures, licence and content terms, target locations, disk/network requirements, rollback procedure and any unavoidable account, payment or GUI step. The producer reviews the plan before acquisition or installation.
+
+The provisioner may automate downloads and user-level installation only from allow-listed sources, verify artifacts before execution, preserve existing plugin/configuration state, and invoke REAPER rescanning through a qualified background mechanism. Installers requiring elevated privileges, account login, licence acceptance, purchase, or changes outside declared paths require an explicit producer handoff. A successful install is not a qualified instrument: the workflow must still load it headlessly, restore a pinned state after restart, render a fixture, measure it, and add catalogue evidence before any musician can select it.
+
+Provisioning never occurs during a take or against the live audio process. Uninstall and rollback must be explicit, and commercial samples, credentials and native binaries remain outside the repository.
 
 ## 11. Render service
 
@@ -227,7 +235,7 @@ A render job includes job ID, arrangement revision, part/performance hash, backe
 
 Worker steps: validate dependencies; initialize an isolated engine; restore patch; schedule the complete phrase; render dry audio and requested intermediate stems; measure basic properties; write temporary outputs; atomically publish assets and metadata on success.
 
-The agent never supplies realtime note timing through successive network calls. Notes and curves are scheduled ahead of rendering. Live preview may play the returned audio through Ardour.
+The agent never supplies realtime note timing through successive network calls. Notes and curves are scheduled ahead of rendering. Live preview may play the returned audio through REAPER.
 
 ### Audio correctness
 
@@ -235,7 +243,7 @@ The agent never supplies realtime note timing through successive network calls. 
 - Preserve headroom. Do not normalize every stem independently by default.
 - Render all stems against a common start time; retain silence and offsets needed for alignment.
 - Include effect tails and release stages beyond the musical endpoint. Tail trimming is explicit.
-- Qualify latency reporting/compensation with impulse or transient tests; retain measured offsets in metadata. Do not double-compensate when importing into Ardour.
+- Qualify latency reporting/compensation with impulse or transient tests; retain measured offsets in metadata. Do not double-compensate when importing into REAPER.
 - Store dry and processed versions when sound design bakes an effect that may need revision.
 - A plugin may be nondeterministic. Record reproducibility as bit-exact, tolerance-bounded or unqualified; do not promise identical audio solely because the MIDI and seed match.
 
@@ -259,7 +267,7 @@ takes/<take-id>/manifest.json
 takes/<take-id>/dry.wav
 takes/<take-id>/audition.wav
 proposals/<proposal-id>.json
-session/<native-ardour-session>/
+session/<native-reaper-project>/
 exports/<export-id>/
 ```
 
@@ -271,7 +279,7 @@ On coordinator restart, do not blindly retry an ambiguous write. Inspect the tar
 
 ## 13. Proposed domain contracts
 
-These names belong to Agentic Studio; they are not claims about existing Ardour MCP tool names. Implementation should publish JSON Schema and fixtures after Gate A, without building a large generic schema framework first.
+These names belong to LLM Studio; they are not claims about existing `reaper-controller` method names. Implementation should publish JSON Schema and fixtures after Gate A, without building a large generic schema framework first.
 
 ### 13.1 Arrangement example
 
@@ -364,22 +372,22 @@ Timebox: two focused engineering sessions, then a written go/no-go report.
 
 On the exact Mac/build, without any automated GUI interaction:
 
-1. Obtain/run an Ardour build meeting the no-mandatory-purchase baseline; record reproducible installation steps.
-2. Discover real native MCP tools and identify gaps; verify the endpoint is only exposed as intended.
-3. Create or bind a disposable session; list stable track IDs; insert an audio stem; read/set gain and pan.
+1. Pin the installed REAPER build and `reaper-controller` commit; run its real doctor/status/test evidence and record licence/setup prerequisites.
+2. Add an idempotent studio bootstrap that previews and backs up changes, deploys the approved bridge/OSC resources and reports any remaining producer handoff instead of clicking through REAPER.
+3. Create or bind a disposable session; list stable track GUIDs; insert an audio stem; read/set gain and pan through the adopted controller.
 4. Have John manually change a fader and draw a gain envelope; retrieve their real resulting state programmatically.
 5. Programmatically apply a bounded envelope proposal and observe it in the DAW; prove undo and save/reopen.
 6. Change a target between proposal and application; verify conflict handling. Establish atomic adapter application or the explicit handoff policy from Section 7.
 7. Replace a part while preserving manual channel gain, processing and automation.
 8. Produce a stereo export and confirm it reflects the manual mix/automation.
 
-A failed envelope readback or unsafe conflict model blocks automatic mix application. Do not substitute screenshot inspection, fader-only control, a flattened mix or a paid DAW. Assess a narrowly scoped native adapter; if it exceeds the timebox, stop and report the architectural choice needed.
+A failed envelope readback or unsafe conflict model blocks automatic mix application. Do not substitute screenshot inspection, fader-only control or a flattened mix. Extend the existing bridge only for proven studio gaps; if that exceeds the timebox, stop and report the architectural choice needed.
 
 ### Gate B: Sound rendering
 
 Timebox: one focused session per candidate; try Pedalboard first, DawDreamer only if needed.
 
-Load one qualified instrument without a GUI; render MIDI and controller changes; save/restore patch state after a worker restart; produce aligned dry stems; compare recall with declared tolerance; cancel a hung/crashed worker while Ardour remains responsive. Prefer the existing SuperCollider path when it already meets an instrument's needs.
+Load one qualified instrument without a GUI; render MIDI and controller changes; save/restore patch state after a worker restart; produce aligned dry stems; compare recall with declared tolerance; cancel a hung/crashed worker while REAPER remains responsive. Prefer the existing SuperCollider path when it already meets an instrument's needs.
 
 ### Gate C: Musical tracer
 
@@ -429,7 +437,7 @@ Native playback timing is the audio engine's responsibility. Network/model respo
 
 ## 19. Local access and operational boundaries
 
-Bind coordinator control endpoints to loopback by default and authenticate any network-exposed control. Verify the actual Ardour binding rather than assuming localhost isolation: current MCP documentation describes an all-interface default [S2]. Remote phone access is deferred until an authenticated design is implemented.
+Bind coordinator control endpoints to loopback by default and authenticate any network-exposed control. Keep REAPER's bridge queues in producer-owned local paths and bind OSC/Web control to loopback where used. Remote phone access is deferred until an authenticated design is implemented.
 
 Arbitrary generated synthesis code runs only in disposable workers with restricted writable project paths and resource budgets. External plugins are native code; a catalogue entry means qualified behaviour, not immunity from crashes.
 
@@ -445,7 +453,7 @@ SPEC.md
 docs/decisions/
 docs/qualification/
 apps/coordinator/
-adapters/ardour/
+adapters/reaper/
 workers/audio/
 workers/supercollider/
 schemas/
@@ -455,24 +463,24 @@ tests/acceptance/
 
 Keep initial code in one repository and one local deployment. Do not introduce Kubernetes, a message broker, multiple independently deployed services, a custom plugin marketplace or a full DAW UI. SQLite and a bounded in-process queue are adequate until measured requirements say otherwise.
 
-Reuse existing connector code only after inspecting its actual interfaces and licences. The earlier projects are known to exist from John's account, but their current implementation was not inspected for this specification. Reuse is a requirement to investigate, not an assertion of compatibility.
+Reuse `reaper-controller` at a pinned commit after confirming its interface and licence boundary. Preserve its requested-versus-observed evidence and empirical pitfalls; add studio semantics above it rather than duplicating its bridge and transport code.
 
 Keep large recordings, plugins, credentials and sample content out of git. Commit small redistributable fixtures, schemas, adapter manifests, build pins and qualification reports. Save complete local project assets outside the source repository.
 
-No outgoing open-source licence for this new repository is selected by this specification. Decide before public distribution, considering included/linked dependencies. The baseline must remain usable without buying a DAW licence.
+No outgoing open-source licence for this new repository is selected by this specification. Decide before public distribution, considering included/linked dependencies and the chosen connector reuse mechanism.
 
 ## 21. Delivery sequence
 
 | Slice | Outcome | Exit condition |
 |---|---|---|
-| 0 | Pin host and qualify Ardour integration | Gate A report, including manual automation and conflict evidence. |
+| 0 | Adopt the existing REAPER controller and close its studio-specific gaps | Gate A report, including bootstrap, manual automation and conflict evidence. |
 | 1 | Qualify existing SC and one additional renderer | Gate B; choose one plugin worker. |
 | 2 | Produce one useful three-part arrangement | Gate C; John can mix, revise and export. |
 | 3 | Persist jobs/takes and safe proposal lifecycle | A04, A11–A17 pass against real integrations. |
 | 4 | Add director/musician roles and bounded parallel generation | Repeatable alternate takes with cost limits and ensemble coordination. |
 | 5 | Add engineer proposals and audition comparisons | Readback, selective application and undo preserve manual work. |
 | 6 | Grow style/instrument packs | Each addition has programmatic qualification and human musical review. |
-| Later | Plugin automation, routing, native instruments, live preview and remote producer UI | Separate scoped gates; no automatic expansion of v1. |
+| Later | Catalogue provisioning, broader plugin automation, live preview and remote producer UI | Separate scoped gates; no automatic expansion of v1. |
 
 Slices 0–2 should be implemented as the smallest useful vertical experiment. The contracts in this document guide that experiment; they are not a mandate to build all infrastructure before hearing music.
 
@@ -482,13 +490,13 @@ For each slice, record demonstrated capability, environment, test result, known 
 
 | Risk / question | Required resolution |
 |---|---|
-| Experimental Ardour MCP unavailable in chosen build | Verify build/source support in Gate A; do not invent endpoint capabilities. |
-| No safe automation read/write or conflict protection | Qualify a small in-process adapter or explicit handoff; otherwise block automatic mix application. |
-| macOS source-build burden | Publish reproducible steps; identify practical failure early. |
+| Existing controller lacks envelope or atomic conflict operations | Extend its bridge narrowly or use an explicit producer handoff; otherwise keep mix proposals preview-only. |
+| REAPER setup still depends on manual scripting/configuration | Add idempotent bootstrap with backups and verified status; surface unavoidable in-app steps clearly. |
+| Plugin provisioning executes untrusted native code | Restrict it to approved pinned catalogue entries with verification, explicit privilege/account handoffs and rollback. |
 | Instrument loads only through GUI | Exclude until API/state-based loading is demonstrated. |
 | Generic MIDI sounds unconvincing | Improve articulations, performances and samples; measure usefulness by audition. |
 | Many agents produce incompatible parts | Shared arrangement revision, constrained briefs and a coordination pass. |
-| Engine duplication creates inconsistent mix | Ardour is authoritative for the accepted mix; render workers supply source takes. |
+| Engine duplication creates inconsistent mix | REAPER is authoritative for the accepted mix; render workers supply source takes. |
 | User wants instrument automation editable like mix automation | Qualify native plugin hosting later; clearly label rendered timbre automation now. |
 | Model lacks meaningful audio perception | Restrict its claims; use human listening and labelled numerical analysis. |
 | No-charge engine but costly sounds/models | Ship a qualified free sound baseline and expose optional costs. |
@@ -497,26 +505,21 @@ Later product decisions: first two style packs; preferred model provider/budget;
 
 ## 23. Definition of done for v1
 
-John can direct a small ensemble, compare takes, choose parts, manually mix and automate, ask an agent for a revision, retain his manual work, reopen the project and export music. Every required operation runs without automated GUI interaction and without a mandatory paid DAW licence. Limitations in style, instrument fidelity and adapter support are visible.
+John can direct a small ensemble, compare takes, choose parts, manually mix and automate, ask an agent for a revision, retain his manual work, reopen the project and export music. Every required agent operation runs without automated GUI interaction; REAPER's licence and optional sound costs are explicit. Limitations in style, instrument fidelity and adapter support are visible.
 
 The studio's value is the speed and quality of producer decisions it enables. A large action catalogue, many agent personas or sophisticated orchestration does not substitute for that outcome.
 
 ## 24. Evidence and references
 
-Reviewed 2026-09-04. Documentation establishes candidate capabilities; installed-version behaviour remains subject to qualification. Source claims are intentionally separated from the proposed architecture and requirements above.
+Reviewed 2026-09-06. Existing controller reports establish useful REAPER evidence; LLM Studio's integrated behaviour remains subject to Gate A qualification. Source claims are intentionally separated from observed runtime evidence.
 
-- **[S1] Ardour automation:** native editable controls and lanes. https://manual.ardour.org/automation/
-- **[S2] Ardour MCP HTTP:** experimental local session-control interface; actual tools/build must be discovered. https://manual.ardour.org/using-control-surfaces/mcp-http/
-- **[S3] Ardour Lua:** bindings, contexts and realtime restrictions. https://manual.ardour.org/lua-scripting/
-- **[S4] Ardour OSC automation:** mode/touch commands; not evidence of arbitrary envelope editing. https://manual.ardour.org/using-control-surfaces/controlling-ardour-with-osc/automation/
-- **[S5] Ardour cost/build policy:** source availability and paid convenience builds. https://ardour.org/faq.html
-- **[S6] Ardour WebSockets:** experimental, limited surface; does not replace full DAW capabilities. https://manual.ardour.org/using-control-surfaces/websockets-server/
-- **[S7] Spotify Pedalboard:** Python audio, VST3/AU instruments/effects and rendering. https://github.com/spotify/pedalboard
-- **[S8] DawDreamer:** Python processing graphs, MIDI/automation and rendering. https://github.com/DBraun/DawDreamer
-- **[S9] SuperCollider non-realtime rendering:** https://doc.sccode.org/Guides/Non-Realtime-Synthesis.html
-- **[S10] Surge XT:** synthesizer and sound palette. https://surge-synthesizer.github.io/
-- **[S11] sfizz:** SFZ sampler library and plugins. https://sfz.tools/sfizz/
-- **[S12] FluidSynth:** SoundFont engine and API/CLI. https://www.fluidsynth.org/
-- **[S13] VSCO Community Edition:** orchestral sample-library candidate. https://github.com/sgossner/VSCO-2-CE
+- **[S1] Existing REAPER controller:** adjacent `reaper-controller` commit `fd56d00`, including its specification, tickets and real-macOS pitfalls.
+- **[S2] Ardour no-go:** [Gate A qualification report](docs/qualification/ardour-gate-a-report.md), retained as the pivot rationale.
+- **[S3] Spotify Pedalboard:** Python audio, VST3/AU instruments/effects and rendering. https://github.com/spotify/pedalboard
+- **[S4] DawDreamer:** Python processing graphs, MIDI/automation and rendering. https://github.com/DBraun/DawDreamer
+- **[S5] SuperCollider non-realtime rendering:** https://doc.sccode.org/Guides/Non-Realtime-Synthesis.html
+- **[S6] Surge XT:** synthesizer and sound palette. https://surge-synthesizer.github.io/
+- **[S7] sfizz:** SFZ sampler library and plugins. https://sfz.tools/sfizz/
+- **[S8] FluidSynth:** SoundFont engine and API/CLI. https://www.fluidsynth.org/
+- **[S9] VSCO Community Edition:** orchestral sample-library candidate. https://github.com/sgossner/VSCO-2-CE
 - **Prior project lessons:** favour inexpensive observations, bounded operations, real backend acceptance and narrow musical milestones. Private implementation details are intentionally omitted from this public specification.
-
