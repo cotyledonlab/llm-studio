@@ -8,6 +8,9 @@ version = "0.1.0"
 description = "Producer-led studio integration and qualification tools"
 requires-python = ">=3.10"
 
+[project.scripts]
+llm-studio = "llm_studio.__main__:main"
+
 [project.optional-dependencies]
 dev = ["pytest>=8"]
 
