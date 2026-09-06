@@ -1,6 +1,7 @@
 # REAPER integration qualification — issue #9
 
-Date: 2026-09-06. Status: implementation in progress; **not a Gate A pass**.
+Date: 2026-09-06. Status: bootstrap and handler implementation qualified below;
+installed studio bridge and producer checks remain open. **Not a Gate A pass**.
 
 ## Baseline observed this session
 
@@ -27,6 +28,10 @@ No producer project, preferences, installed scripts or plugins were modified
 by these checks. File-drop discovery needs permission to write the controller
 queue even when the requested REAPER operation is read-only.
 
+Live `hello` returned REAPER `7.79/macOS-arm64`, 16 tracks and state-change
+count 70. `studio.session_snapshot` returned `UNKNOWN_OP`, confirming that
+the installed bridge does not yet have this extension.
+
 ## Integration adjustment
 
 Reuse the controller as an external pinned checkout; do not vendor its generic
@@ -48,13 +53,99 @@ before distribution. See `adapters/reaper/controller-pin.json`.
 
 ## Remaining acceptance evidence
 
-- Bootstrap preview, backup, idempotent apply, verification and rollback on a
-  disposable resource tree, followed by real installation verification.
+- Real clean-profile installation/startup and OSC round-trip verification.
 - Studio extension activation and observed capability/session discovery.
-- Disposable-project GUID binding through rename/reorder, explicit orphaning
-  after deletion, and rejection following session switches.
-- Durable stem import, native mixer/FX readback and rendered gain/pan evidence.
+- End-to-end Python adapter → installed controller → REAPER evidence, including
+  bridge restart and a nonempty FX chain. Native handler evidence below covers
+  the core semantics but is not this full transport chain.
+- A producer manually moved fader readback and listening confirmation. Native
+  API changes in the harness are not human interaction evidence.
 
 Issue #9 remains open until its real acceptance evidence exists. Issues #10,
 #11 and the coordinator remain dependent work. Loading/reloading a ReaScript
 may need a precise producer action; do not automate the DAW GUI to bypass it.
+
+## Implemented and verified in this slice
+
+The safe bootstrap CLI and adapter are documented in
+[`adapters/reaper/README.md`](../../adapters/reaper/README.md).
+
+`REAPER_CONTROLLER_CHECKOUT=/Users/johnmaher/code/reaper-controller
+/Users/johnmaher/code/reaper-controller/.venv/bin/python -m pytest -q`
+passed **27 tests in 0.56 seconds**. This includes the real pinned-source hook,
+Lua syntax checks, installation in a never-launched disposable resource tree,
+idempotence, rollback, injected partial-write failure recovery, corrupted
+backup refusal, symlink rejection, typed controller errors and readback checks.
+The disposable resource tests explicitly provide an inactive-profile process
+probe; they do not assert that the producer's REAPER is stopped.
+
+The real profile preview would replace `Scripts/agent_bridge.lua`, add
+`Scripts/llm_studio_reaper.lua`, and retain the already matching OSC file and
+INI configuration. No live file was changed. Apply with actual permitted
+process detection returned `REAPER appears to be running; refusing configuration
+writes`. Sandboxed process detection returned unexpected status 3 and also
+refused, rather than treating an unknown state as stopped.
+
+The first preview exposed lowercase `[reaper]` in the actual profile; the INI
+planner now handles section names case-insensitively without creating a second
+section. This has a regression assertion.
+
+## Native handler and audio evidence
+
+The supported `REAPER -nonewinst -noactivate script.lua` command executed the
+bounded qualification script, without mouse/keyboard/Accessibility automation.
+This interface is documented in the [official v6.80 changelog](https://www.reaper.fm/download-old.php?ver=6x)
+and present in the installed 7.79 binary's command-line usage strings.
+
+The completed run is retained locally under
+`/private/tmp/llm-studio-reaper/qualification-6sk64bx9/` (WAVs/projects are not
+committed). Its `handler-evidence.txt` recorded:
+
+- Stopped producer transport; a new disposable tab with two native track GUIDs.
+- Saved project identity and durable one-second audio import, read back from
+  the actual item/source, including position and item GUID.
+- External native gain edit read back at 0.75; handler gain/pan read back at
+  0.5 and hard right. The external edit was programmatic, not a manual fader.
+- Rename/reorder preserved the GUID target and its gain. Deletion returned
+  `TRACK_ORPHANED`; switching away and back rejected the previous token with
+  `SESSION_CHANGED`.
+- `producer_project_restored=true` and `producer_state_unchanged=true`.
+
+The adopted controller rendered `baseline.RPP` and `processed.RPP` successfully
+to 24-bit stereo WAVs (265,290 bytes each). The committed audio-comparison tool
+observed 44,100 frames at 44,100 Hz in both:
+
+| Measurement | Baseline | Half gain, hard right |
+|---|---:|---:|
+| Left RMS | 0.06443388166 | 0 |
+| Right RMS | 0.06443388166 | 0.03221693994 |
+| Peak | 0.09156596661 | 0.04578304291 |
+
+Right-channel gain ratio: **0.4999999862**. Both files are non-silent and
+unclipped; the requested gain/pan change is present in rendered samples.
+This is objective audio evidence, not a claim of producer listening approval.
+
+The first native harness run failed its saved-path assertion and safely restored
+the producer project. `Main_SaveProjectEx(..., 0)` saves a copy; the documented
+flag `8` establishes the new project filename. Correcting that flag produced
+the passing run above. A separate read-only probe also established that
+`GetSetProjectInfo_String(..., 'PROJECT_GUID', ...)` returns false in this build:
+session identity therefore uses saved path plus a handler nonce and observed
+project-pointer epoch. Native track GUIDs remain the track identity.
+
+Disposable tabs from qualification remain available for inspection; producer
+tabs were not closed. The installed daemon and live preferences remain intact.
+Final live discovery still returned 16 tracks, with state-change count 73
+(initial discovery was 70). Each synchronous handler run reported its captured
+producer count unchanged; the later count increase is not attributed by this
+evidence. Do not interpret those per-run checks as proof that no producer or
+host state changed across the entire working session.
+
+## Deferred boundaries
+
+The handler's tick-based session token does not promise detection of a switch
+away and back entirely between callbacks. This is not a production write lease.
+Producer-owned project writes, automation envelopes and strict conflict semantics
+remain disabled/out of scope pending #10. Import retries can duplicate items
+after an uncertain transport outcome; do not retry blindly. Licence notices
+and outgoing licensing remain a pre-distribution follow-up for #30.

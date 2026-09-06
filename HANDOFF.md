@@ -2,6 +2,30 @@
 
 Updated: 2026-09-06. Repository: `cotyledonlab/llm-studio`. Branch: `main`.
 
+## Implementation continuation — 2026-09-06
+
+Work progressed on `feat/reaper-studio-bootstrap`. Read
+[`docs/qualification/reaper-environment.md`](docs/qualification/reaper-environment.md)
+and [`adapters/reaper/README.md`](adapters/reaper/README.md) before resuming.
+The earlier assignment below is retained as the original handoff, not a claim
+that its implementation is still untouched.
+
+Implemented: pinned controller boundary, safe bootstrap CLI with durable
+backups/recovery, exact single-daemon hook, and disposable-only session/GUID,
+gain/pan, FX discovery and WAV-import adapter. The full upstream suite passed
+47 tests; this slice passed 27 local tests including actual pinned-resource
+install/rollback and Lua syntax checks. A real disposable REAPER handler run
+passed GUID rename/reorder/deletion/session-switch and durable import checks;
+rendered gain/pan measurements passed. Producer project selection was restored
+and its state-change count remained unchanged. No live bootstrap was applied.
+
+**Next:** finish #9's installed-profile/bridge-restart/OSC and end-to-end adapter
+qualification in a suitable stopped-profile window; obtain actual manual-fader
+and listening evidence. Live bootstrap correctly refuses while REAPER runs.
+Do not close #9 or start #10 from unit/native-handler tests alone. Two Terra
+agents produced the initial work but hit their usage limit; the primary agent
+completed review, fixes, integration and native qualification.
+
 ## Mission
 
 Build the smallest producer-led workflow in which agents create and revise musical takes while John retains authoritative manual control of the accepted REAPER project. Use background APIs, scripts and file protocols only; never automate the DAW GUI.
