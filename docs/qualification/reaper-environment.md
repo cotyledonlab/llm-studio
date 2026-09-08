@@ -1,7 +1,8 @@
 # REAPER integration qualification — issue #9
 
 Updated: 2026-09-08. Status: installed clean-profile bridge, adapter and OSC
-qualified below; manual fader readback passed; listening remains open. **Not a Gate A pass**.
+qualified below; manual fader readback and producer listening passed.
+**Issue #9 acceptance complete; not a full Gate A pass.**
 
 ## Baseline observed this session
 
@@ -243,8 +244,8 @@ this as producer-project mutation evidence or an unchanged-preferences claim
 for the accidentally launched application's own startup behavior.
 
 All live mutations in the successful checks targeted the disposable project.
-The producer has not yet supplied manual fader or listening evidence. #9 remains
-open and #32 remains draft; no #10 work was started.
+At this stage manual fader/listening evidence was pending. Both were later
+completed below; no #10 work was started.
 
 
 The optional fresh render comparison did not pass: after saving two controlled
@@ -254,8 +255,8 @@ adapter) and restoring both tracks to unity/centre, the upstream controller's
 a WAV. Python reaped that renderer; host process inspection again showed only
 PID 68814. `render-mixer-evidence.json` records the observed changes/restores.
 The prior native-handler measurements are retained as historical evidence;
-no fresh rendered-audio success is claimed. Manual fader readback and listening
-remain the current producer handoff.
+no fresh rendered-audio success is claimed. Subsequent live listening
+acceptance is recorded below; export reproducibility remains a #11 follow-up.
 
 
 ## Producer manual fader readback — 2026-09-08
@@ -273,6 +274,40 @@ preceding unity observation; pan remained centre and `StudioImport` remained
 unity. See local `manual-track-after.json` and `manual-fader-evidence.json`.
 
 **Manual track-fader readback passed.** The producer's changes were retained.
-Listening remains pending; a short current-versus-quieter/hard-right audition
-was proposed, with restoration of the producer's exact track setting afterward.
-No human listening success is claimed yet.
+The following live audition completed the remaining human listening check.
+
+
+## Producer listening and issue #9 acceptance — 2026-09-08
+
+Monitoring: the producer's **laptop speakers**. The installed Python adapter
+and OSC lane played two bounded passes of the same disposable MIDI phrase:
+
+- A: producer's existing gain `0.5016383722284` (-5.992185 dB), centre pan.
+- B: gain `0.2508191861142` (6.0206 dB quieter), hard-right pan `1`.
+
+The first audition was not accepted; the producer requested a retry. The retry
+used a three-second pause between passes. It captured 104 OSC events for A
+and 112 for B, including stop feedback in both. The adapter observed the
+requested change, then restored the exact producer gain and centre pan.
+After being asked whether both passes were heard and the second was quieter
+or shifted right, the producer confirmed: **"yes that went as expected"**.
+This is basic listening acceptance on laptop speakers, not a calibrated
+stereo-monitoring or musical-quality evaluation.
+
+A final independent read at `2026-09-08T06:07:49.431594Z` retained the same
+session token and native GUID and confirmed -5.992185001375451 dB, pan 0.
+The producer's MASTER adjustment was not changed by either audition.
+Local artifacts: `listening-evidence.json` (first attempt),
+`listening-retry-evidence.json`, `producer-listening-confirmation.json`, and
+`accepted-final-snapshot.json`. Raw capture deliberately does not self-certify
+human listening; the separate producer confirmation supplies that evidence.
+
+All five issue #9 acceptance criteria now have evidence: clean bootstrap and
+installed bridge/OSC; idempotence/backups/safe refusal; native GUID behavior;
+manual fader and audible programmatic mixer changes; reproducible pinned
+controller boundary. PR #32 can leave draft for review and merge. Keep #9
+open until its implementation is merged; this is not completion of Gate A.
+#10 automation/conflict semantics and #11 replacement/save/reopen/export remain
+subsequent work. The fresh optional render timeout is still unresolved and
+must be reproduced before claiming reliable export; previous successful native
+renders and this live audition do not erase that failure.
