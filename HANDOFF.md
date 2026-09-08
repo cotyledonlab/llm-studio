@@ -1,10 +1,54 @@
 # New-agent handoff
 
-Updated: 2026-09-06. Repository: `cotyledonlab/llm-studio`.
+Updated: 2026-09-08. Repository: `cotyledonlab/llm-studio`.
 Resume branch: `feat/reaper-studio-bootstrap`.
 Draft PR: [#32](https://github.com/cotyledonlab/llm-studio/pull/32).
 
-## Resume preparation — 2026-09-06
+## Installed qualification — 2026-09-08 (current next step)
+
+John confirmed REAPER was closed. Fresh bootstrap applied and verified in
+both the normal profile (bridge/handler only; durable backup) and a clean
+profile. The clean-profile repeat apply made no changes. **Do not reapply
+configuration while the test instance is running.**
+
+The clean-profile instance is currently open on disposable `adapter-session`.
+Its installed Python adapter passed saved-session/native-GUID discovery,
+ReaSynth FX discovery (18 params), gain/pan readback and restoration, and a
+one-second WAV import at position 4s. OSC play/stop/feedback passed (136 events,
+nonzero VU, advancing timecode). Bridge shutdown/restart passed; a fresh token
+was observed and the previous token rejected. Full evidence is in
+`docs/qualification/reaper-environment.md`, with raw artifacts under
+`/private/tmp/llm-studio-reaper/qualification-20260908/`.
+
+Current profile: `.../qualification-20260908/clean-profile/reaper.ini`.
+Current test project: `.../qualification-20260908/adapter-session.RPP`.
+Native script forwarding **must include the same `-cfgfile`** along with
+`-nonewinst -noactivate`; omission started an extra normal-profile process,
+which was terminated. Only the isolated test instance remained before OSC.
+The original timeout on clean startup later resolved; the producer has not
+identified any startup dialog. Do not invent that explanation.
+
+**Next:** collect actual manual fader readback and listening. The producer was
+asked to move `StudioQualification` from 0 dB to about -6 dB, leave playback
+stopped and report the displayed value. No answer has arrived yet. Compare
+with the saved post-restart unity observation and fresh adapter readback;
+retain session/token/GUID identity. Test mix was restored to unity/centre
+before this request; preserve the producer's subsequent manual change.
+
+A new optional render A/B attempt timed out after 45 seconds without a WAV.
+The adapter-generated baseline/processed project copies and mixer restoration
+evidence exist; do not claim those fresh renders passed. The unchanged prior
+native-handler audio measurements remain valid historical evidence. New
+manual/listening evidence is still required. #9 stays open, #32 draft, and
+#10 has not started. Normal-profile runtime activation is not proved by this
+isolated-profile test.
+
+Normal-profile rollback receipt:
+`.../qualification-20260908/profile-receipt.json`; durable recovery receipt is
+`~/Library/Application Support/REAPER/LLMStudioBackups/bootstrap-af5892127fad44a4a01e7a19c713ebf4/result.json`.
+Rollback also requires all REAPER instances stopped and unmodified targets.
+
+## Historical resume preparation — 2026-09-06
 
 Fetched and confirmed the existing branch is aligned with origin; #9 is open
 and #32 is still draft. Read-only readiness again passed. Live `hello` returned

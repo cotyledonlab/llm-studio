@@ -44,7 +44,9 @@ File verification does **not** claim that REAPER loaded the new script.
 After applying while stopped, start REAPER and run/reload `agent_bridge.lua`.
 Its existing action registration can be reused. Native command-line script
 execution is supported and qualified for the test harness; persistent startup
-activation is still a qualification item. Do not automate the DAW GUI.
+action configuration remains optional and unqualified. Clean-profile native
+CLI activation and restart passed on 2026-09-08; when forwarding a script,
+include the same absolute `-cfgfile` used at launch. Do not automate the DAW GUI.
 
 ## Studio boundary
 

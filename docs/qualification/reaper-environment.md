@@ -1,7 +1,7 @@
 # REAPER integration qualification — issue #9
 
-Date: 2026-09-06. Status: bootstrap and handler implementation qualified below;
-installed studio bridge and producer checks remain open. **Not a Gate A pass**.
+Updated: 2026-09-08. Status: installed clean-profile bridge, adapter and OSC
+qualified below; producer fader/listening checks remain open. **Not a Gate A pass**.
 
 ## Baseline observed this session
 
@@ -51,7 +51,7 @@ file at the pin. Private reuse continues through the external checkout. Obtain
 the upstream copyright/licence notice and choose the studio's outgoing licence
 before distribution. See `adapters/reaper/controller-pin.json`.
 
-## Remaining acceptance evidence
+## Acceptance evidence outstanding on 2026-09-06 (historical)
 
 - Real clean-profile installation/startup and OSC round-trip verification.
 - Studio extension activation and observed capability/session discovery.
@@ -187,3 +187,72 @@ Producer-owned project writes, automation envelopes and strict conflict semantic
 remain disabled/out of scope pending #10. Import retries can duplicate items
 after an uncertain transport outcome; do not retry blindly. Licence notices
 and outgoing licensing remain a pre-distribution follow-up for #30.
+
+
+## Installed-profile qualification — 2026-09-08
+
+The producer confirmed REAPER was closed. Host process detection confirmed
+no running REAPER; sandboxed `pgrep` could not inspect processes and was not
+interpreted as a stopped result. Fresh plans were generated and reviewed.
+The branch was clean and aligned with origin before this qualification.
+
+Evidence root: `/private/tmp/llm-studio-reaper/qualification-20260908/`.
+Generated audio, projects, plans and receipts remain local.
+
+- Clean profile: `clean-profile/`; first apply installed bridge, handler, OSC
+  and INI, with a durable receipt. File/queue verification passed. Fresh-plan
+  repeat apply reported `changed: []`.
+- Normal profile: installed the bridge and studio handler, retained the matching
+  OSC file, and did not edit the INI. File/queue verification passed. Recovery
+  receipt is `profile-receipt.json`; its backup is
+  `~/Library/Application Support/REAPER/LLMStudioBackups/bootstrap-af5892127fad44a4a01e7a19c713ebf4/`.
+  Normal-profile runtime activation is not claimed by the clean-profile test.
+- Native launch used the absolute `-cfgfile clean-profile/reaper.ini`,
+  `-newinst`, disposable `adapter-session.RPP`, then the installed bridge script.
+  An initial 5-second probe timed out; the bridge subsequently became active.
+  The producer has not identified any startup prompt, so its cause is unknown.
+- The installed Python adapter then discovered the exact saved disposable path,
+  GUID `{B241E427-5B68-480D-AA41-6CC0F28DA872}`, unity/centre mixer state,
+  and `VSTi: ReaSynth (Cockos)` with 18 parameters (`active-snapshot.json`).
+- A native read-only script independently confirmed the exact resource path,
+  disposable project path and `play_state=0` before mixer/import work.
+- Python adapter gain/pan writes returned volume `0.5`, pan `1`; a separate
+  read agreed. Restore returned unity/centre and a separate read agreed.
+- Added disposable `StudioImport` track, discovered its native GUID, and used
+  the Python adapter to stage/import a generated one-second WAV at 4 seconds.
+  The installed handler returned the content-addressed source path, item GUID,
+  position and length. Details are retained in `installed-checks.jsonl`.
+- OSC listener was bound before `/play`. In a bounded three-second run it
+  captured 136 events, advancing timecode, track-1 VU maximum `0.8273620605`,
+  `/play [1]`, then `/stop [1]` and `/play [0]`. See `osc-evidence.json`.
+- Bridge shutdown acknowledged `stopping: true`. After its heartbeat was stale
+  for over 24 seconds, the installed script restarted via native CLI. New
+  snapshot token differed; `ping` and `hello` passed, and a read using the old
+  token returned `SESSION_CHANGED`. See `restart-evidence.json` and
+  `restarted-snapshot.json`.
+
+A command-line targeting pitfall was observed: omitting `-cfgfile` from
+`-nonewinst -noactivate script.lua` launched a separate normal-profile process.
+The read-only script included a resource assertion; no observation file was
+produced, so its execution in that extra process is not established. The agent terminated only that newly launched
+process (PID 69022). Retrying with the explicit clean-profile `-cfgfile`
+forwarded successfully to the original test instance (PID 68814). Process
+inspection confirmed it was the only REAPER instance before OSC playback.
+The acceptance checklist now includes the required flag. Do not interpret
+this as producer-project mutation evidence or an unchanged-preferences claim
+for the accidentally launched application's own startup behavior.
+
+All live mutations in the successful checks targeted the disposable project.
+The producer has not yet supplied manual fader or listening evidence. #9 remains
+open and #32 remains draft; no #10 work was started.
+
+
+The optional fresh render comparison did not pass: after saving two controlled
+project copies through native CLI (with actual mixer changes through the Python
+adapter) and restoring both tracks to unity/centre, the upstream controller's
+`render_project(..., timeout=45)` timed out on `baseline.rendercopy.rpp` without
+a WAV. Python reaped that renderer; host process inspection again showed only
+PID 68814. `render-mixer-evidence.json` records the observed changes/restores.
+The prior native-handler measurements are retained as historical evidence;
+no fresh rendered-audio success is claimed. Manual fader readback and listening
+remain the current producer handoff.

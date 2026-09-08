@@ -112,9 +112,17 @@ The producer re-runs `agent_bridge.lua` in the isolated instance, or uses the
 qualified command below against that instance only:
 
 ```sh
-/Applications/REAPER.app/Contents/MacOS/REAPER -nonewinst -noactivate \
+/Applications/REAPER.app/Contents/MacOS/REAPER -cfgfile "$RESOURCE/reaper.ini" \
+  -nonewinst -noactivate \
   "$RESOURCE/Scripts/agent_bridge.lua"
 ```
+
+Observed 2026-09-08: omitting `-cfgfile "$RESOURCE/reaper.ini"` starts a
+separate normal-profile process instead of targeting the isolated profile. The
+first isolated launch temporarily timed out, then the bridge became active;
+verify with a fresh heartbeat and bridge replies. The producer has not yet
+confirmed the startup dialog's profile identity, so do not treat that dialog
+as identity evidence.
 
 After the heartbeat is fresh, capture a new snapshot. Do not reuse the old
 token for writes.
