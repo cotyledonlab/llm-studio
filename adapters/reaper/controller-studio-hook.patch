@@ -1,0 +1,32 @@
+--- a/bridge/agent_bridge.lua
++++ b/bridge/agent_bridge.lua
+@@ -219,4 +219,11 @@
++-- LLM Studio extension: one handler in the existing serialized daemon.
++local studio_handler = nil
++local studio_loaded, studio_module = pcall(dofile, RES .. '/Scripts/llm_studio_reaper.lua')
++if studio_loaded and type(studio_module) == 'table' and type(studio_module.handle) == 'function' then
++  studio_handler = studio_module
++end
++
+ local function handle(op_id, req)
+   if type(req) ~= 'table' then reply_err(op_id, 'BAD_REQUEST', 'unparseable JSON'); return end
+   if req.v ~= 1 then reply_err(op_id, 'BAD_VERSION', 'expected v=1'); return end
+   if req.op_id ~= op_id then reply_err(op_id, 'ID_MISMATCH', 'filename/op_id differ'); return end
+@@ -514,6 +521,8 @@
+     if path == '' then reply_err(op_id, 'BAD_REQUEST', 'path required'); return end
+     reaper.Main_SaveProjectEx(0, path, 0)
+     reply_ok(op_id, { path = path }, { 'op:project.save' })
++  elseif studio_handler and studio_handler.handle(op_id, req, reply_ok, reply_err) then
++    return
+   else
+     reply_err(op_id, 'UNKNOWN_OP', 'no such op: ' .. tostring(op))
+   end
+@@ -524,5 +533,8 @@
+ local function tick()
+   local now = reaper.time_precise()
++  if studio_handler and studio_handler.observe_session then
++    studio_handler.observe_session()
++  end
+   if now - last_scan >= 0.1 then
+     last_scan = now
+     local i, guard = 0, 0

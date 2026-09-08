@@ -1,88 +1,130 @@
 # New-agent handoff
 
-Updated: 2026-09-06. Repository: `cotyledonlab/llm-studio`. Branch: `main`.
+Updated: 2026-09-08. Repository: `cotyledonlab/llm-studio`.
+Branch: `feat/reaper-studio-bootstrap`.
+PR: [#32](https://github.com/cotyledonlab/llm-studio/pull/32).
 
-## Mission
+## Current outcome and next step
 
-Build the smallest producer-led workflow in which agents create and revise musical takes while John retains authoritative manual control of the accepted REAPER project. Use background APIs, scripts and file protocols only; never automate the DAW GUI.
+**Issue #9 acceptance is complete. PR #32 is ready for review and merge.**
+Keep #9 open until the implementation is merged. This is not a full Gate A
+pass. Do not start #10 or the coordinator as part of wrapping up this PR.
+Fetch and inspect the current PR state before resuming; do not restart from
+main or duplicate the implementation. Review the qualified scope in
+[`docs/qualification/reaper-environment.md`](docs/qualification/reaper-environment.md)
+and [`adapters/reaper/README.md`](adapters/reaper/README.md).
 
-## Current position
+The final producer action is complete: on laptop speakers John confirmed the
+retried current-versus-quieter/hard-right audition with "yes that went as
+expected". This is basic listening acceptance, not calibrated stereo or
+musical-quality evaluation. The first audition was retried, not counted as a
+pass. No further producer acceptance action is required for #9.
 
-- Architecture pivoted from Ardour to REAPER in commit `a7827d7`; read [the ADR](docs/adr/0001-reaper-as-authoritative-daw.md), [domain language](CONTEXT.md), [specification](SPEC.md) and [implementation plan](docs/IMPLEMENTATION_PLAN.md).
-- `main` was clean and synchronized with `origin/main` at handoff creation.
-- Ardour issue #8 is closed with a bounded no-go. Its reports are historical pivot evidence, not work to resume.
-- SuperCollider issue #12 is closed: the NRT pattern passed a real isolated phrase render. Reuse mechanics/SynthDefs selectively, not the immature connector API unchanged.
-- Pedalboard issue #13 is closed: Pedalboard 0.9.24 with Dexed VST3 1.0.1 passed real state restore, MIDI/CC and repeat-render checks. DawDreamer was not needed.
-- Gate A is open on REAPER. Gate B still needs the catalogue (#14) and worker isolation/alignment (#15). Gate C and later coordination remain blocked.
+## Observed acceptance evidence
 
-## Exact next task
+- External controller pinned and clean at
+  `fd56d0008ffa5fba25cc58a70e5ae632c80b4c16`, in
+  `/Users/johnmaher/code/reaper-controller`.
+- REAPER 7.79 on macOS arm64. Upstream suite: 47 passed with host permissions.
+  Latest studio suite: 37 passed with the actual pinned checkout enabled.
+  Pre-merge review corrected temporary-file cleanup/retry in local bootstrap
+  recovery; the installed daemon/handler and live mix were not changed.
+- Reviewed bootstrap applied and verified while stopped in both the normal
+  profile and a clean profile; clean repeat apply changed nothing. Normal
+  profile changes were bridge/handler only; matching OSC and INI retained.
+  Backups, rollback, running-process refusal and interrupted recovery have
+  their documented test evidence.
+- Native CLI launched the isolated profile/project and installed daemon.
+  Python adapter discovery returned exact saved session, native track GUIDs
+  and nonempty ReaSynth FX discovery (18 parameters).
+- Installed adapter gain/pan writes, independent readback and restoration
+  passed. Actual content-addressed one-second WAV import at 4s returned source,
+  item GUID, position and length.
+- OSC play/stop feedback, advancing timecode and nonzero VU passed. Bridge
+  shutdown/restart returned a fresh token and rejected the old token.
+- Native-handler qualification previously passed two-track GUID rename/reorder,
+  deletion/session-switch rejection and durable import. Prior objective render
+  evidence measured right RMS ratio 0.4999999862, hard-right left RMS zero.
+- John manually moved StudioQualification to displayed -5.99 dB; the installed
+  adapter returned -5.992185001375451 dB with matching GUID and session token.
+  His first adjustment was MASTER, correctly distinguished by readback.
+- Live listening retry: two 2.8s passes separated by 3s; B had half linear gain
+  and hard-right pan. Producer accepted. Independent final readback confirmed
+  exact restoration of his track gain and centre pan.
 
-Start GitHub issue #9: **Adopt the REAPER controller and automate studio bootstrap**. Do not start #10 or build the coordinator before #9's real acceptance evidence exists.
+## Current live state and local artifacts
 
-The relevant adjacent repository is `/Users/johnmaher/code/reaper-controller`, clean at commit `fd56d0008ffa5fba25cc58a70e5ae632c80b4c16`. Follow its `AGENTS.md`; read `skills/reaper/SKILL.md`, `README.md`, `SPEC.md`, `docs/pitfalls.md` and the ticket reports before changing or invoking it.
+Re-observe before any new DAW action. The last observed instance was the clean
+profile on disposable `adapter-session`, stopped after the audition.
 
-At handoff, these read-only checks passed:
+Evidence root: `/private/tmp/llm-studio-reaper/qualification-20260908/`.
+Profile: `clean-profile/reaper.ini`; project: `adapter-session.RPP`.
+Track `StudioQualification`: GUID `{B241E427-5B68-480D-AA41-6CC0F28DA872}`,
+linear gain 0.5016383722284, pan 0. MASTER also manually lowered to about
+-5.99 dB. Preserve both producer adjustments. StudioImport remains unity.
 
-```text
-REAPER: /Applications/REAPER.app
-Version: 7.79.0_06dd787u
-Resource directory: present
-Headless render flags: present
-Bridge queues: present
-Bridge daemon: alive
-OSC receive/feedback and Web Remote ports: in use
-Controller doctor: overall OK
-Controller tests: 47 passed in 1.64 s with CoreMIDI/loopback access
-REAPER evaluation notice: yes
-```
+Key artifacts: `installed-checks.jsonl`, `osc-evidence.json`,
+`restart-evidence.json`, `manual-fader-evidence.json`,
+`listening-retry-evidence.json`, `producer-listening-confirmation.json`,
+`accepted-final-snapshot.json`. Prior render evidence is under
+`/private/tmp/llm-studio-reaper/qualification-6sk64bx9/`. Temporary evidence may
+expire; durable results and qualified limitations are in the committed report.
 
-The full suite aborts/fails if the agent sandbox denies CoreMIDI or loopback socket creation; `tests/test_midi.py` and two OSC loopback tests exercise those host facilities. Re-run with the narrow required local-device/network permission before diagnosing a product regression. The same suite passed fully once that permission was granted during this handoff.
+Normal-profile rollback receipt: `qualification-20260908/profile-receipt.json`.
+Durable recovery receipt:
+`~/Library/Application Support/REAPER/LLMStudioBackups/bootstrap-af5892127fad44a4a01e7a19c713ebf4/result.json`.
+Rollback requires all REAPER instances stopped and unmodified targets. Do not
+reapply configuration while the test instance runs. Normal-profile file install
+is verified; its runtime activation is not established by the isolated test.
 
-John is willing to purchase REAPER. Purchase, account handling and licence activation are producer actions; do not automate or claim them complete. The evaluation notice is not a technical Gate A failure, but the paid prerequisite must remain explicit.
+## Known failures and boundaries
 
-## Issue #9 execution order
+- Alternate-profile native script forwarding **must include the same absolute
+  `-cfgfile`** with `-nonewinst -noactivate`. Omitting it started an extra
+  normal-profile process, which the agent terminated. The guarded read-only
+  script produced no observation file there; its execution was not established.
+  The corrected invocation reached the isolated instance. Do not claim global
+  producer-profile state was unchanged by that application's own startup.
+- Initial clean-profile startup probe timed out, then the daemon became active.
+  No producer report identified a startup dialog; its cause is unknown.
+- A fresh optional render A/B using upstream `render_project(..., timeout=45)`
+  timed out without a WAV. The mixer had already been restored. Do not erase
+  this failure with the prior native render pass or live listening acceptance.
+  Reproduce and resolve it in #11 before claiming reliable export. Explicit
+  profile selection is a hypothesis, not a verified renderer fix.
+- Session tokens are callback observations, not production write leases; a
+  switch away/back entirely between callbacks is not guaranteed detectable.
+  Import timeouts must not be retried blindly. WAV-only import is qualified.
+- No producer-project writes, envelopes, conflict protocol or coordinator are
+  implemented by this slice. The controller declares MIT but lacks a standalone
+  licence notice; #30 covers notices/outgoing licensing before distribution.
+  REAPER purchase/activation remain producer actions; evaluation is explicit.
 
-1. Create a feature branch/worktree and inspect both repositories without changing John's live project.
-2. Pin the controller reuse mechanism and document its licence/interface boundary. Do not casually copy its implementation into this repository.
-3. Re-run controller tests with the required CoreMIDI/loopback permission, then `doctor`, `status` and read-only live discovery. Preserve requested-versus-observed evidence.
-4. Design bootstrap as plan/dry-run/apply/verify/rollback. It may copy approved scripts, OSC resources and create queues, but must back up every touched REAPER configuration file, preserve unrelated preferences and refuse unsafe changes while REAPER is running.
-5. Identify any unavoidable producer action inside REAPER and report it precisely. Do not replace it with mouse, keyboard, Accessibility or screenshot automation.
-6. Add the thin LLM Studio adapter and real disposable-project tests required by #9: session identity, stable track GUIDs, durable stem import, mixer/FX readback, rename/reorder/delete/session-switch behaviour and audible gain/pan evidence.
-7. Commit and push each logical working state. Update the issue with observed evidence; do not close it on mocks or controller tests alone.
+## Mission and subsequent work
 
-## Safety and authority boundaries
+Build the smallest producer-led workflow where agents create/revise takes and
+John retains authoritative manual control of the accepted REAPER project.
+Read `CONTEXT.md`, `SPEC.md`, the REAPER ADR and `docs/IMPLEMENTATION_PLAN.md`.
+Issue tracker status is authoritative. Ardour #8 is closed historical no-go;
+SuperCollider #12 and Pedalboard/Dexed #13 have real qualification evidence.
 
-- Treat the open REAPER project as producer-owned. Use only disposable projects under the controller's documented test/scratch paths unless John explicitly names a real project.
-- Only one agent/process may mutate the live REAPER session. Background renderers must not acquire its audio device.
-- Requested is not observed. Read back every mutation and preserve operation/session identity.
-- Do not edit REAPER preferences while REAPER is running unless the exact operation is already qualified as safe.
-- Never install plugins during a take. Future plugin acquisition is governed catalogue provisioning under #31: approved pinned source, hashes/signatures, licence/provenance, explicit installation approval, qualification and rollback.
-- Do not commit plugin binaries, sample libraries, private audio, credentials or generated qualification WAVs.
+After #32 is merged, #10 addresses envelope fidelity, stale-state rejection or
+explicit handoff, and safe undo. #11 covers mix-preserving take replacement,
+binding recovery, save/reopen and export (including the render timeout above).
+Gate B still needs catalogue #14 and isolation/alignment #15. #31 provisioning
+is deferred convenience, not permission to install plugins during qualification.
 
-## Known gaps after #9
+## Safety and working rules
 
-- #10 must add bounded REAPER envelope read/write, mode/shape/time-base fidelity, atomic stale-state rejection or explicit producer handoff, and safe undo.
-- #11 must prove mix-preserving take replacement, binding recovery, save/reopen and final export.
-- #14 must qualify the actual drum, bass and keys catalogue; a plugin being installed or listed is not sufficient.
-- #15 must add cancellation, deadlines, process-group isolation, resource measurement and alignment without affecting REAPER.
-- #31 is P2 post-v1 convenience, not permission to build a plugin marketplace now.
-
-## Useful commands
-
-```sh
-cd /Users/johnmaher/code/llm-studio
-git status --short --branch
-gh issue view 9
-
-cd /Users/johnmaher/code/reaper-controller
-git status --short --branch
-.venv/bin/python -m pytest
-.venv/bin/reaper-connector doctor
-.venv/bin/reaper-connector status
-```
-
-Run mutation commands only after the safety checks in the controller skill and only against a disposable project. The handoff is complete when the next agent can state which #9 acceptance criteria have real evidence, which remain blocked, and what exact producer action—if any—is required.
-
-## Copy/paste assignment
-
-> Work issue #9 in `cotyledonlab/llm-studio`: adopt the existing `/Users/johnmaher/code/reaper-controller` at pinned commit `fd56d0008ffa5fba25cc58a70e5ae632c80b4c16` and automate safe REAPER studio bootstrap. Read both repositories' instructions and `HANDOFF.md` first. Use a feature branch/worktree, preserve requested-versus-observed evidence, touch only disposable REAPER projects, never use GUI automation, and do not manipulate purchase/licence activation. Implement plan/dry-run/apply/verify/rollback bootstrap plus the thin stable-GUID/mixer/import adapter and real acceptance evidence required by issue #9. Commit and push logical working states; do not start #10 or close #9 on mocks alone.
+- Only one agent/process may mutate live REAPER. Background renderers must not
+  acquire its audio device. Never automate the DAW GUI.
+- Follow adjacent controller `AGENTS.md`, `skills/reaper/SKILL.md`, README,
+  SPEC, pitfalls and ticket reports before invoking/changing it.
+- Mutate only disposable projects under documented scratch/test paths unless
+  John explicitly names a real project. Read back every mutation.
+- Preserve producer edits. Never edit active REAPER preferences or bypass
+  uncertain/running-process detection. Sandbox process checks can fail; obtain
+  host access rather than interpreting failure as stopped.
+- Do not commit generated audio/projects, plugins, samples, credentials or
+  private recordings. Commit and push working states. User requested cheaper
+  subagents for independent work; keep live DAW ownership with the primary.
