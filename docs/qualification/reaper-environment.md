@@ -1,7 +1,7 @@
 # REAPER integration qualification — issue #9
 
 Updated: 2026-09-08. Status: installed clean-profile bridge, adapter and OSC
-qualified below; producer fader/listening checks remain open. **Not a Gate A pass**.
+qualified below; manual fader readback passed; listening remains open. **Not a Gate A pass**.
 
 ## Baseline observed this session
 
@@ -256,3 +256,23 @@ PID 68814. `render-mixer-evidence.json` records the observed changes/restores.
 The prior native-handler measurements are retained as historical evidence;
 no fresh rendered-audio success is claimed. Manual fader readback and listening
 remain the current producer handoff.
+
+
+## Producer manual fader readback — 2026-09-08
+
+The producer first moved MASTER to a displayed -5.99 dB. The track adapter
+correctly continued to report both tracks at unity; an independent read-only
+native check found MASTER at -5.9921850013755 dB with transport stopped.
+This was distinguished from the required track-fader check.
+
+The producer then explicitly reported moving `StudioQualification` to -5.99 dB.
+At `2026-09-08T06:03:17.428194Z`, the installed Python adapter returned linear
+gain `0.5016383722284`, or **-5.992185001375451 dB**, correctly rounding to
+**-5.99 dB**. The native track GUID and post-restart session token matched the
+preceding unity observation; pan remained centre and `StudioImport` remained
+unity. See local `manual-track-after.json` and `manual-fader-evidence.json`.
+
+**Manual track-fader readback passed.** The producer's changes were retained.
+Listening remains pending; a short current-versus-quieter/hard-right audition
+was proposed, with restoration of the producer's exact track setting afterward.
+No human listening success is claimed yet.

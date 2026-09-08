@@ -28,18 +28,25 @@ which was terminated. Only the isolated test instance remained before OSC.
 The original timeout on clean startup later resolved; the producer has not
 identified any startup dialog. Do not invent that explanation.
 
-**Next:** collect actual manual fader readback and listening. The producer was
-asked to move `StudioQualification` from 0 dB to about -6 dB, leave playback
-stopped and report the displayed value. No answer has arrived yet. Compare
-with the saved post-restart unity observation and fresh adapter readback;
-retain session/token/GUID identity. Test mix was restored to unity/centre
-before this request; preserve the producer's subsequent manual change.
+**Next:** finish listening. Manual track-fader readback passed: the producer
+reported `StudioQualification` at -5.99 dB and the installed adapter returned
+-5.992185001375451 dB (linear gain 0.5016383722284), with matching GUID/token.
+MASTER is also manually lowered to approximately -5.99 dB; retain both human
+changes. Raw `manual-track-after.json` and `manual-fader-evidence.json` record
+the track check. The earlier first move was MASTER, correctly distinguished
+by native readback from the track check.
+
+The producer has been asked to confirm readiness and headphones/speakers for
+a short live A/B: current track mix, then 6.0206 dB quieter and hard right,
+then restore the exact manually set track gain and pan. Use only the first
+three seconds (the imported tone starts at 4s). Capture OSC evidence and
+producer listening confirmation. Do not reset the track to unity.
 
 A new optional render A/B attempt timed out after 45 seconds without a WAV.
 The adapter-generated baseline/processed project copies and mixer restoration
 evidence exist; do not claim those fresh renders passed. The unchanged prior
 native-handler audio measurements remain valid historical evidence. New
-manual/listening evidence is still required. #9 stays open, #32 draft, and
+listening evidence is still required. #9 stays open, #32 draft, and
 #10 has not started. Normal-profile runtime activation is not proved by this
 isolated-profile test.
 
