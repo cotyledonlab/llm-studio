@@ -36,7 +36,11 @@ pin, rejects stale targets and unsafe process detection, and backs up touched
 files before changing them. Existing INI sections/preferences are retained.
 The backup directory contains `result.json` before the first installed-file
 write: after an interrupted apply, pass that receipt to `bootstrap-rollback`.
-Rollback checks every backup and refuses to replace later edits. Empty setup
+Rollback checks every backup and refuses to replace later edits. Apply uses
+transaction-specific staging paths recorded in its manifest; recovery removes
+only staged files whose content still matches the plan. Changed or incomplete
+staged files are retained for inspection without blocking a new transaction.
+Rollback also uses unique staging paths so a failed restore can be retried. Empty setup
 directories and backup evidence are retained; it never recursively deletes them.
 Review plan/receipt files as local setup artifacts; do not accept untrusted ones.
 

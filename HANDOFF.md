@@ -26,8 +26,9 @@ pass. No further producer acceptance action is required for #9.
   `fd56d0008ffa5fba25cc58a70e5ae632c80b4c16`, in
   `/Users/johnmaher/code/reaper-controller`.
 - REAPER 7.79 on macOS arm64. Upstream suite: 47 passed with host permissions.
-  Latest studio suite: 35 passed with the actual pinned checkout enabled.
-  Subsequent commits changed qualification documentation only.
+  Latest studio suite: 37 passed with the actual pinned checkout enabled.
+  Pre-merge review corrected temporary-file cleanup/retry in local bootstrap
+  recovery; the installed daemon/handler and live mix were not changed.
 - Reviewed bootstrap applied and verified while stopped in both the normal
   profile and a clean profile; clean repeat apply changed nothing. Normal
   profile changes were bridge/handler only; matching OSC and INI retained.

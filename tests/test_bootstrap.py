@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 
@@ -122,7 +123,8 @@ def test_rejects_unapproved_agent_config_and_persists_reviewed_state(tmp_path: P
     assert load_result(result_file).changed == result.changed
 
 
-def test_partial_apply_has_recoverable_receipt(tmp_path, monkeypatch):
+@pytest.mark.parametrize('stage_changed', [False, True])
+def test_partial_apply_has_recoverable_receipt(tmp_path, monkeypatch, stage_changed):
     import llm_studio.bootstrap as bootstrap
     root = controller(tmp_path)
     pin(monkeypatch, root)
@@ -139,10 +141,47 @@ def test_partial_apply_has_recoverable_receipt(tmp_path, monkeypatch):
         apply(plan, running=lambda: False)
     backup = next((resource / 'LLMStudioBackups').iterdir())
     receipt = load_recovery_result(backup)
+    records = json.loads((backup / 'manifest.json').read_text())['files']
+    staged = resource / records[1]['temporary']
+    assert not staged.exists()  # Synchronous replacement failure cleaned its file.
+    content = next(item.content for item in plan.files if item.relative_path == records[1]['path'])
+    # Simulate a completed stage left by interruption, or a subsequent edit.
+    staged.write_bytes(b'changed after interruption' if stage_changed else content)
+    unrelated = resource / 'OSC/.other-transaction-new'
+    unrelated.write_bytes(b'leave me')
     monkeypatch.setattr(bootstrap.os, 'replace', real_replace)
     rollback(receipt, running=lambda: False)
     assert not (resource / 'Scripts/agent_bridge.lua').exists()
     assert not (resource / 'reaper.ini').exists()
+    if stage_changed:
+        assert staged.read_bytes() == b'changed after interruption'
+    else:
+        assert not staged.exists()
+    assert unrelated.read_bytes() == b'leave me'
+    assert apply(plan_bootstrap(resource, root, tmp_path / 'no-extension'), running=lambda: False).changed
+
+
+def test_rollback_replace_failure_can_be_retried(tmp_path, monkeypatch):
+    import llm_studio.bootstrap as bootstrap
+    root = controller(tmp_path)
+    pin(monkeypatch, root)
+    resource = tmp_path / 'resource'
+    resource.mkdir()
+    (resource / 'Scripts').mkdir()
+    (resource / 'Scripts/agent_bridge.lua').write_text('old bridge')
+    result = apply(plan_bootstrap(resource, root, tmp_path / 'no-extension'), running=lambda: False)
+    real_replace = bootstrap.os.replace
+    def fail_first(source, target):
+        if str(target).endswith('Scripts/agent_bridge.lua'):
+            raise OSError('injected rollback disk error')
+        return real_replace(source, target)
+    monkeypatch.setattr(bootstrap.os, 'replace', fail_first)
+    with pytest.raises(OSError, match='rollback disk error'):
+        rollback(result, running=lambda: False)
+    monkeypatch.setattr(bootstrap.os, 'replace', real_replace)
+    assert rollback(result, running=lambda: False) == (
+        'Scripts/agent_bridge.lua', 'OSC/Agent.ReaperOSC', 'reaper.ini')
+    assert (resource / 'Scripts/agent_bridge.lua').read_text() == 'old bridge'
 
 
 def test_corrupt_later_backup_prevents_any_rollback(tmp_path, monkeypatch):

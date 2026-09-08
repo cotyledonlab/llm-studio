@@ -328,7 +328,12 @@ def apply(plan: BootstrapPlan, *, running: Callable[[], bool] = reaper_running) 
             backup_name: str | None = item.relative_path
         else:
             backup_name = None
-        records.append({"path": item.relative_path, "before_hash": item.before_hash, "after_hash": item.after_hash, "backup": backup_name, "state": "prepared"})
+        temporary = Path(item.relative_path).with_name(
+            f".{Path(item.relative_path).name}.llm-studio-{stamp}-new"
+        )
+        records.append({"path": item.relative_path, "before_hash": item.before_hash,
+                        "after_hash": item.after_hash, "backup": backup_name,
+                        "temporary": str(temporary), "state": "prepared"})
     manifest_path = backup_dir / "manifest.json"
     _write_json_atomic(manifest_path, {"version": 1, "files": records})
     save_result(BootstrapResult(plan, backup_dir, (), tuple(unchanged)), backup_dir / "result.json")
@@ -337,12 +342,18 @@ def apply(plan: BootstrapPlan, *, running: Callable[[], bool] = reaper_running) 
         record["state"] = "writing"
         _write_json_atomic(manifest_path, {"version": 1, "files": records})
         target.parent.mkdir(parents=True, exist_ok=True)
-        temporary = target.with_name(f".{target.name}.llm-studio-new")
+        temporary = _safe_target(plan.resource_path, record["temporary"])
         if temporary.exists() or temporary.is_symlink():
             raise UnsafeBootstrap(f"refusing to replace unexpected temporary file: {temporary}")
-        with temporary.open('xb') as stream:
-            stream.write(item.content)
-        os.replace(temporary, target)
+        try:
+            with temporary.open('xb') as stream:
+                stream.write(item.content)
+            os.replace(temporary, target)
+        except Exception:
+            if (temporary.is_file() and not temporary.is_symlink()
+                    and _file_hash(temporary) == item.after_hash):
+                temporary.unlink()
+            raise
         changed.append(item.relative_path)
         record["state"] = "applied"
         _write_json_atomic(manifest_path, {"version": 1, "files": records})
@@ -384,6 +395,16 @@ def rollback(result: BootstrapResult, *, running: Callable[[], bool] = reaper_ru
             backup = result.backup_dir / record["backup"]
             if _file_hash(backup) != record["before_hash"]:
                 raise RollbackRefused(f"backup integrity failure: {record['path']}")
+    owned_temporaries: list[tuple[Path, str]] = []
+    for record in records:
+        temporary_name = record.get("temporary")
+        if not temporary_name:
+            continue
+        temporary = _safe_target(result.plan.resource_path, temporary_name)
+        if (temporary.is_file() and not temporary.is_symlink()
+                and _file_hash(temporary) == record["after_hash"]):
+            owned_temporaries.append((temporary, record["after_hash"]))
+
     restored: list[str] = []
     for record in records:
         target = _safe_target(result.plan.resource_path, record["path"])
@@ -395,12 +416,24 @@ def rollback(result: BootstrapResult, *, running: Callable[[], bool] = reaper_ru
             backup = result.backup_dir / record["backup"]
             if _file_hash(backup) != record["before_hash"]:
                 raise RollbackRefused(f"backup integrity failure: {record['path']}")
-            temporary = target.with_name(f".{target.name}.llm-studio-rollback")
-            with temporary.open('xb') as stream:
-                stream.write(backup.read_bytes())
-            shutil.copystat(backup, temporary, follow_symlinks=False)
-            os.replace(temporary, target)
+            temporary = target.with_name(
+                f".{target.name}.llm-studio-rollback-{uuid.uuid4().hex}"
+            )
+            try:
+                with temporary.open('xb') as stream:
+                    stream.write(backup.read_bytes())
+                shutil.copystat(backup, temporary, follow_symlinks=False)
+                os.replace(temporary, target)
+            except Exception:
+                if (temporary.is_file() and not temporary.is_symlink()
+                        and _file_hash(temporary) == record["before_hash"]):
+                    temporary.unlink()
+                raise
         restored.append(record["path"])
+    for temporary, expected_hash in owned_temporaries:
+        if (temporary.is_file() and not temporary.is_symlink()
+                and _file_hash(temporary) == expected_hash):
+            temporary.unlink()
     return tuple(restored)
 
 

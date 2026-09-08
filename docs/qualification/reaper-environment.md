@@ -311,3 +311,27 @@ open until its implementation is merged; this is not completion of Gate A.
 subsequent work. The fresh optional render timeout is still unresolved and
 must be reproduced before claiming reliable export; previous successful native
 renders and this live audition do not erase that failure.
+
+
+## Pre-merge review and recovery correction — 2026-09-08
+
+Two independent Luna subagents reviewed standards and issue #9 conformance
+against base `00314ad` and implementation head `9c09113`. Neither found a
+separate standards violation or out-of-scope/missing #9 behavior. Both identified
+a blocking recovery defect: failed file replacement left a deterministic stage
+filename behind, so rollback followed by a new apply could refuse indefinitely.
+An analogous failed rollback replacement could block retrying rollback.
+
+The correction records a unique staging path per apply transaction, cleans
+matching staged content after a synchronous failure or rollback, and uses
+unique restore stages for rollback. Edited/incomplete staging files are kept
+for inspection rather than deleted, and do not block new transactions. Existing
+recovery receipts remain readable without the optional staging metadata.
+
+Regression coverage now verifies synchronous failure cleanup, simulated
+interruption cleanup, preservation of changed staged content and unrelated
+files, re-apply after rollback, and retry after a failed rollback replacement.
+The full studio suite with the actual pinned controller passed **37 tests in
+0.90 seconds**; diff whitespace checks passed. This changed local bootstrap
+recovery only; the installed bridge/handler and live producer mix were not
+modified during review. The live acceptance evidence above remains applicable.
