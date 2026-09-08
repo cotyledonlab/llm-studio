@@ -1,16 +1,17 @@
 # New-agent handoff
 
 Updated: 2026-09-08. Repository: `cotyledonlab/llm-studio`.
-Branch: `feat/reaper-studio-bootstrap`.
+Resume branch: `main`. Implementation branch: `feat/reaper-studio-bootstrap`.
 PR: [#32](https://github.com/cotyledonlab/llm-studio/pull/32).
 
 ## Current outcome and next step
 
-**Issue #9 acceptance is complete. PR #32 is ready for review and merge.**
-Keep #9 open until the implementation is merged. This is not a full Gate A
-pass. Do not start #10 or the coordinator as part of wrapping up this PR.
-Fetch and inspect the current PR state before resuming; do not restart from
-main or duplicate the implementation. Review the qualified scope in
+**PR #32 is merged and issue #9 is closed.** Merge commit:
+`3a6477a16c9b755e0c3246116f3131d84b130697`. Two Luna subagents reviewed
+Standards and Spec; their shared recovery blocker was fixed in `d9fcaea`,
+re-reviewed, and validated by 37 passing tests before merge. This is not a
+full Gate A pass. The next implementation task is #10; it has not started.
+Fetch main before resuming and do not duplicate the merged implementation. Review the qualified scope in
 [`docs/qualification/reaper-environment.md`](docs/qualification/reaper-environment.md)
 and [`adapters/reaper/README.md`](adapters/reaper/README.md).
 
@@ -108,7 +109,7 @@ Read `CONTEXT.md`, `SPEC.md`, the REAPER ADR and `docs/IMPLEMENTATION_PLAN.md`.
 Issue tracker status is authoritative. Ardour #8 is closed historical no-go;
 SuperCollider #12 and Pedalboard/Dexed #13 have real qualification evidence.
 
-After #32 is merged, #10 addresses envelope fidelity, stale-state rejection or
+#10 next addresses envelope fidelity, stale-state rejection or
 explicit handoff, and safe undo. #11 covers mix-preserving take replacement,
 binding recovery, save/reopen and export (including the render timeout above).
 Gate B still needs catalogue #14 and isolation/alignment #15. #31 provisioning
