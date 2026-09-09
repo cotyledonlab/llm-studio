@@ -1,4 +1,64 @@
-# New-agent handoff
+# Current handoff — issue #10 in progress
+
+Updated: 2026-09-09. Resume branch: `feat/reaper-automation-handoff`.
+Draft PR: [#33](https://github.com/cotyledonlab/llm-studio/pull/33).
+Implementation `81782cb`, native runner/report `099faf5`, both pushed.
+Issue #10 remains open. Do not merge or claim Gate A complete.
+
+Read [automation qualification](docs/qualification/reaper-automation.md) and
+[adapter contract](adapters/reaper/README.md) before further live work.
+Bounded native volume observation/apply and checked envelope-only recovery are
+implemented. The full pinned-controller studio suite passed 43 tests. Native
+copy-based qualification passed manual-lane copying, static-mode refusal,
+programmatic intervening-edit conflict, exact recovery, refusal after unrelated
+work, and patch save/reopen. Native global Undo restored pre-setup state in the
+first probe; recovery now uses a checked compensating envelope transaction.
+
+## Current live state
+
+Only the primary owns live writes; no subagents were used. REAPER was stopped
+at the start of this session. A fresh disposable profile was launched at
+`/private/tmp/llm-studio-reaper/a3-probe/profile/reaper.ini`. John dismissed the
+startup dialog. Always use this exact absolute `-cfgfile` when forwarding native
+scripts; never automate the DAW GUI or edit active profile configuration.
+
+Original active tab is `a3-probe/session.RPP`, with one `StudioAutomation` track.
+John manually moved points at 1, 2 and 3 seconds and confirmed it in conversation.
+Captured linear gains were 0.25118864, 0.0419846 and 0.00120226 respectively.
+Envelope GUID: `{4C4BF0CF-8580-B941-98FE-60269BE60A4B}`. Preserve his edits.
+The runner saved a copy and restored the original tab with its revision unchanged.
+The copy `automation-y8d1mjbr/session.RPP` contains the qualification patch and
+an unrelated control track; its complete native evidence is in that directory.
+The older #9 profile and producer gain/pan adjustments were not opened/changed.
+
+## Pending producer action and next work
+
+John was asked to move the 2-second point once more to test actual human-edit
+rejection. The first three-minute watcher timed out without detecting an edit;
+its result is `a3-probe/manual-conflict-timeout.txt`. A new ten-minute watcher
+was armed from `a3-probe/manual-conflict.lua`; inspect `manual-conflict.txt` before
+any further DAW action. Do not start another live mutator while it runs.
+It only attempts a proposal after detecting a changed envelope chunk, which must
+be rejected against the old observation. It records elapsed time and exact
+point/revision preservation. Observations expire after 30 seconds: if the human
+edit happens later, report expiry as a possible rejection reason rather than
+claiming a within-freshness fingerprint-only human test. The native programmatic
+edit test separately demonstrated exact state mismatch rejection.
+
+Once this watcher finishes, save the disposable manual tab without losing edits.
+Remaining work: updated installed bridge/Python transport qualification (stop
+REAPER safely before bootstrap), exported audio comparison, envelope attachment/
+timebase semantics, quantitative polling freshness, and A03–A06/A15 review.
+Do not treat the native direct-handler runner as installed-transport evidence.
+The new runner requires exact active source/profile and waits for its observed
+completion; source revision or native assertion failures make the CLI fail.
+
+Keep issue #10 and PR #33 open until acceptance is established. The #9 renderer
+timeout still belongs to #11; it has not been resolved by this session.
+
+---
+
+# Prior handoff — issue #9 complete (historical)
 
 Updated: 2026-09-08. Repository: `cotyledonlab/llm-studio`.
 Resume branch: `main`. Implementation branch: `feat/reaper-studio-bootstrap`.
