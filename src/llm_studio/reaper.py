@@ -19,6 +19,10 @@ class UnsupportedReaperCapability(ReaperAdapterError):
     pass
 
 
+class ProposalConflict(ReaperAdapterError):
+    pass
+
+
 class SessionChanged(ReaperAdapterError):
     pass
 
@@ -29,7 +33,7 @@ class TrackBindingOrphaned(ReaperAdapterError):
 
 def _error(code: str, detail: str) -> ReaperAdapterError:
     kind = {"UNKNOWN_OP": UnsupportedReaperCapability, "UNSUPPORTED": UnsupportedReaperCapability,
-            "SESSION_CHANGED": SessionChanged, "TRACK_ORPHANED": TrackBindingOrphaned}.get(code, ReaperAdapterError)
+            "CONFLICT": ProposalConflict, "SESSION_CHANGED": SessionChanged, "TRACK_ORPHANED": TrackBindingOrphaned}.get(code, ReaperAdapterError)
     return kind(f"{code}: {detail}")
 
 
@@ -70,9 +74,9 @@ class Session:
 class ReaperStudioAdapter:
     """Inject ``reaper_connector.bridge.send``; keep transport ownership upstream.
 
-    Only disposable sessions are writable in this issue #9 qualification slice.
+    Only disposable sessions are writable in this qualification slice.
     Gain uses dB at this boundary; ``silent=True`` explicitly requests zero gain.
-    This is not the production proposal/conflict protocol reserved for issue #10.
+    Envelope receipts are bounded qualification operations, not coordinator write leases.
     """
 
     def __init__(self, bridge_send: Callable, *, disposable_roots: tuple[Path, ...] | None = None):
@@ -165,6 +169,101 @@ class ReaperStudioAdapter:
         if not isinstance(observed, Mapping) or any(not _number(observed.get(key)) or not math.isclose(observed[key], value, rel_tol=1e-9, abs_tol=1e-12) for key, value in values.items()):
             raise ReaperAdapterError('mixer readback differs; do not retry blindly')
         return result
+
+    def read_volume_envelope(self, session: Session, guid: str, *, start_sec: float,
+                             end_sec: float) -> Mapping[str, Any]:
+        """Observe a bounded native volume lane; receipt expires in 30 seconds."""
+        self._envelope_range(start_sec, end_sec)
+        result = self._send('studio.read_volume_envelope', self._params(
+            session, guid, start_sec=start_sec, end_sec=end_sec))
+        return self._envelope_observed(result, guid, start_sec, end_sec)
+
+    @staticmethod
+    def _envelope_range(start: float, end: float) -> None:
+        if not _number(start) or not _number(end) or start < 0 or not 0 < end - start <= 600:
+            raise ValueError('range must be positive and at most 600 seconds')
+
+    @staticmethod
+    def _envelope_observed(result: Mapping[str, Any], guid: str, start: float, end: float) -> dict:
+        points = result.get('points')
+        if points == {}:
+            points = []
+        if (result.get('track_guid') != guid or result.get('start_sec') != start
+                or result.get('end_sec') != end or result.get('time_domain') != 'project_seconds'
+                or any(not isinstance(result.get(key), str) or not result[key]
+                       for key in ('envelope_guid', 'fingerprint'))
+                or not isinstance(points, list) or len(points) > 2048
+                or type(result.get('state_change_count')) is not int
+                or not _number(result.get('observed_at')) or result.get('max_age_sec') != 30
+                or result.get('scaling_mode') not in (0, 1)):
+            raise ReaperAdapterError('invalid observed envelope')
+        parsed, previous = [], -math.inf
+        for point in points:
+            if (not isinstance(point, Mapping) or not _number(point.get('time_sec'))
+                    or not start <= point['time_sec'] <= end or point['time_sec'] <= previous
+                    or not _number(point.get('volume')) or point['volume'] < 0
+                    or not _number(point.get('raw_value'))
+                    or type(point.get('shape')) is not int or not 0 <= point['shape'] <= 5
+                    or not _number(point.get('tension')) or type(point.get('selected')) is not bool):
+                raise ReaperAdapterError('invalid observed envelope point')
+            previous = point['time_sec']
+            parsed.append({**point, 'gain_db': 20 * math.log10(point['volume']) if point['volume'] else None,
+                           'silent': point['volume'] == 0})
+        return {**result, 'points': parsed}
+
+    def patch_volume_envelope(self, session: Session, guid: str, baseline: Mapping[str, Any],
+                              points: list[Mapping[str, Any]]) -> Mapping[str, Any]:
+        """Apply an authorized linear range patch with unchanged endpoint gains.
+
+        Each point has time_sec and either gain_db or silent=True. A timeout is
+        uncertain: observe the session; never blindly retry a write.
+        """
+        start, end = baseline.get('start_sec'), baseline.get('end_sec')
+        self._envelope_range(start, end)
+        self._envelope_observed(baseline, guid, start, end)
+        if not isinstance(points, list) or not 2 <= len(points) <= 2048:
+            raise ValueError('patch requires 2..2048 points including boundaries')
+        encoded, previous = [], -math.inf
+        for point in points:
+            if not isinstance(point, Mapping):
+                raise ValueError('invalid patch point')
+            time, db, silent = point.get('time_sec'), point.get('gain_db'), point.get('silent', False)
+            if (not _number(time) or not start <= time <= end or time <= previous
+                    or type(silent) is not bool or (silent and db is not None)
+                    or (not silent and (not _number(db) or not -150 <= db <= 12))):
+                raise ValueError('invalid ordered point gain/time')
+            previous = time
+            encoded.append({'time_sec': time, 'volume': 0 if silent else 10 ** (db / 20)})
+        if encoded[0]['time_sec'] != start or encoded[-1]['time_sec'] != end:
+            raise ValueError('explicit boundary points required')
+        self._writable(session)
+        result = self._send('studio.patch_volume_envelope', self._params(session, guid,
+            start_sec=start, end_sec=end, envelope_guid=baseline['envelope_guid'],
+            fingerprint=baseline['fingerprint'], points=encoded))
+        observed = result.get('observed')
+        if not isinstance(observed, Mapping) or not isinstance(result.get('receipt'), str) or not result['receipt']:
+            raise ReaperAdapterError('missing patch receipt/readback; do not retry blindly')
+        observed = self._envelope_observed(observed, guid, start, end)
+        if len(observed['points']) != len(encoded) or any(
+                actual['time_sec'] != wanted['time_sec'] or not math.isclose(actual['volume'], wanted['volume'], rel_tol=1e-9, abs_tol=1e-12)
+                for actual, wanted in zip(observed['points'], encoded)):
+            raise ReaperAdapterError('patch readback differs; do not retry blindly')
+        return {**result, 'observed': observed}
+
+    def undo_volume_patch(self, session: Session, guid: str, patch: Mapping[str, Any]) -> Mapping[str, Any]:
+        """Restore the prior envelope in a checked compensating transaction."""
+        observed, receipt = patch.get('observed'), patch.get('receipt')
+        if not isinstance(observed, Mapping) or not isinstance(receipt, str) or not receipt:
+            raise ValueError('patch receipt required')
+        start, end = observed.get('start_sec'), observed.get('end_sec')
+        self._envelope_range(start, end)
+        self._envelope_observed(observed, guid, start, end)
+        self._writable(session)
+        result = self._send('studio.undo_volume_patch', self._params(session, guid,
+            receipt=receipt, start_sec=start, end_sec=end))
+        if result.get('undone') is not True or not isinstance(result.get('observed'), Mapping):
+            raise ReaperAdapterError('missing undo readback; do not retry blindly')
+        return {**result, 'observed': self._envelope_observed(result['observed'], guid, start, end)}
 
     def import_stem(self, session: Session, guid: str, stem: Path, *, position_sec: float = 0) -> Mapping[str, Any]:
         if not _number(position_sec) or position_sec < 0:

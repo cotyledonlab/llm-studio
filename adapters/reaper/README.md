@@ -1,12 +1,13 @@
-# REAPER integration slice — issue #9
+# REAPER integration qualification
 
 This is a private, macOS qualification slice, restricted to disposable projects.
-It does not authorize production mix proposals or implement envelopes (#10).
+It does not authorize production mix proposals. Issue #10 envelope work is
+under qualification; see the bounded contract below.
 
 The external controller is pinned in `controller-pin.json`. Its file-drop
 transport, OSC resources and renderer remain upstream. `controller-studio-hook.patch`
 is an exact patch against that commit: it loads `studio_handler.lua` into the
-existing daemon, routes only four `studio.*` operations and observes session
+existing daemon, routes bounded `studio.*` operations and observes session
 changes during daemon ticks. No generic bridge code is copied into this repo.
 
 The controller's declared MIT licence has no accompanying copyright notice at
@@ -118,3 +119,42 @@ Render `baseline.RPP` and `processed.RPP` with the upstream controller's
 `render --wav` before audio comparison. The native handler test does not deploy
 or restart the producer's daemon and does not replace end-to-end installed
 bridge qualification. See the [observed report](../../docs/qualification/reaper-environment.md).
+
+## Volume envelope qualification — issue #10
+
+`read_volume_envelope(session, guid, start_sec=..., end_sec=...)` returns a native
+volume-envelope GUID, mode, active/armed state, project/track timebase settings,
+raw and linear values, dB/silence, shape/tension/selection and bounded points.
+Coordinates are **project seconds**. Envelope beat-attachment preferences and
+behavior across tempo changes are not yet qualified; this API does not offer
+beat-domain editing. Fader scaling is converted by REAPER's own scaling APIs.
+
+`patch_volume_envelope(session, guid, baseline, points)` takes points with
+`time_sec` and `gain_db` (or `silent=True`). It replaces the inclusive range with
+linear segments. Endpoints must already exist uniquely and retain their gains;
+the right endpoint retains its outgoing shape/tension. Outside points and
+non-point envelope metadata are checked exactly. Curved-segment subdivision,
+automation items, duplicate point times, ranges over 600 seconds, more than
+2,048 total points and chunks over 256 KiB are refused. Existing interpolation
+is observed; no claim is made that linear interpolation in native fader space
+is linear in dB.
+
+The opaque fingerprint references an exact server-side envelope snapshot,
+settings and project state-change count. It expires after 30 seconds and is
+single-use on apply; only the latest 32 observations are retained. Comparison
+and application run synchronously in one bridge callback without yielding.
+Any observed project change, even unrelated work, causes conservative conflict.
+A new observation requires a new reviewed proposal, not blind retry. Session
+switch/restart invalidates receipts under the previously documented token limits.
+Writes require stopped transport, an active volume lane, Trim/Read or Read and
+no global automation override. Static mixer writes refuse an affected control
+with an active lane, points or automation items, and all non-Trim/Read modes.
+
+`undo_volume_patch(session, guid, patch)` is a **compensating envelope restore**,
+not global Undo. It checks that no project revision or target state changed,
+then restores only the original envelope in a named undo transaction. It refuses
+after unrelated edits, restart or session change. The latest patch alone retains
+a recovery receipt. Each applied proposal also has a uniquely named native undo
+block, but native undo snapshots can predate changes made by other scripts; the
+adapter never invokes global Undo. Transport failure after a mutation has an
+uncertain outcome: inspect fresh state and do not retry blindly.
