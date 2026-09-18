@@ -81,6 +81,7 @@ if not observe() then return end
 record('armed', true)
 record('instruction', 'move the existing two-second volume point once')
 
+local safe_poll
 local function poll()
   if finished then return end
   if reaper.EnumProjects(-1, '') ~= project or reaper.GetPlayState() ~= 0 then
@@ -127,6 +128,10 @@ local function poll()
   if reaper.time_precise() - observed_at >= 20 then
     if not observe() then return end
   end
-  reaper.defer(poll)
+  reaper.defer(safe_poll)
 end
-reaper.defer(poll)
+safe_poll = function()
+  local ok, error_detail = xpcall(poll, debug.traceback)
+  if not ok then finish(false, error_detail) end
+end
+reaper.defer(safe_poll)
