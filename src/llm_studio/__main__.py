@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 from . import bootstrap
+from .catalogue import Catalogue, CatalogueError
 
 
 def main() -> int:
@@ -22,6 +23,9 @@ def main() -> int:
     for name in ("bootstrap-verify", "bootstrap-rollback"):
         command = commands.add_parser(name)
         command.add_argument("receipt", type=Path)
+    commands.add_parser("catalogue-list", help="List versioned instrument catalogue entries")
+    check = commands.add_parser("catalogue-check", help="Verify one instrument's pinned dependencies")
+    check.add_argument("instrument_id")
     args = parser.parse_args()
     try:
         if args.command == "bootstrap-plan":
@@ -37,9 +41,28 @@ def main() -> int:
             result = bootstrap.verify(bootstrap.load_result(args.receipt))
             print(json.dumps(result, indent=2))
             return 0 if result["ok"] else 1
-        else:
+        elif args.command == "bootstrap-rollback":
             result = {"restored": bootstrap.rollback(bootstrap.load_result(args.receipt))}
-    except (bootstrap.BootstrapError, OSError, ValueError) as exc:
+        elif args.command == "catalogue-list":
+            catalogue = Catalogue.packaged()
+            result = [
+                {
+                    "id": instrument.id,
+                    "name": instrument.data["name"],
+                    "role": instrument.data["role"],
+                    "qualification": instrument.qualification,
+                }
+                for instrument in (catalogue.get(identifier) for identifier in catalogue.ids())
+            ]
+        else:
+            instrument = Catalogue.packaged().check_dependencies(args.instrument_id)
+            result = {
+                "ok": True,
+                "id": instrument.id,
+                "qualification": instrument.qualification,
+                "state_sha256": instrument.data["state_sha256"],
+            }
+    except (bootstrap.BootstrapError, CatalogueError, OSError, ValueError) as exc:
         print(json.dumps({"ok": False, "error": str(exc)}))
         return 1
     print(json.dumps(result, indent=2))
