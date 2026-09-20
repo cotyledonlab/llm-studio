@@ -195,12 +195,21 @@ class ReaperStudioAdapter:
                 or not isinstance(points, list) or len(points) > 2048
                 or type(result.get('state_change_count')) is not int
                 or not _number(result.get('observed_at')) or result.get('max_age_sec') != 30
-                or result.get('scaling_mode') not in (0, 1)):
+                or result.get('scaling_mode') not in (0, 1)
+                or result.get('project_timebase') not in (0, 1, 2)
+                or result.get('track_timebase') not in (-1, 0, 1, 2)
+                or result.get('effective_timebase') not in (0, 1, 2)
+                or result.get('effective_timebase') != (
+                    result['project_timebase'] if result['track_timebase'] == -1
+                    else result['track_timebase'])
+                or result.get('attachment_domain') != (
+                    'project_time' if result['effective_timebase'] == 0 else 'project_beats')):
             raise ReaperAdapterError('invalid observed envelope')
         parsed, previous = [], -math.inf
         for point in points:
             if (not isinstance(point, Mapping) or not _number(point.get('time_sec'))
                     or not start <= point['time_sec'] <= end or point['time_sec'] <= previous
+                    or not _number(point.get('quarter_note'))
                     or not _number(point.get('volume')) or point['volume'] < 0
                     or not _number(point.get('raw_value'))
                     or type(point.get('shape')) is not int or not 0 <= point['shape'] <= 5

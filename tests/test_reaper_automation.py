@@ -2,6 +2,8 @@
 from pathlib import Path
 import shutil
 import subprocess
+import sys
+import tempfile
 
 import pytest
 
@@ -22,8 +24,11 @@ def test_native_handler_contract(tmp_path):
 def baseline():
     return dict(track_guid='{track}', envelope_guid='{env}', fingerprint='observation',
                 start_sec=1, end_sec=3, time_domain='project_seconds', scaling_mode=1,
+                project_timebase=0, track_timebase=-1, effective_timebase=0,
+                attachment_domain='project_time',
                 state_change_count=1, observed_at=5, max_age_sec=30,
-                points=[dict(time_sec=t, volume=v, raw_value=v, shape=0, tension=0, selected=False)
+                points=[dict(time_sec=t, quarter_note=t * 2, volume=v, raw_value=v,
+                             shape=0, tension=0, selected=False)
                         for t, v in [(1, 1), (2, .5), (3, 1)]])
 
 
@@ -45,9 +50,35 @@ def test_db_patch_and_readback_validation(tmp_path):
         adapter.patch_volume_envelope(session, '{track}', baseline(), points)
 
 
-@pytest.mark.parametrize('field,value', [('fingerprint', ''), ('state_change_count', None), ('scaling_mode', 4), ('max_age_sec', 1000)])
+@pytest.mark.parametrize('field,value', [('fingerprint', ''), ('state_change_count', None),
+    ('scaling_mode', 4), ('max_age_sec', 1000), ('effective_timebase', 1),
+    ('attachment_domain', 'project_beats')])
 def test_invalid_observation(field, value):
     data = baseline()
     data[field] = value
     with pytest.raises(ReaperAdapterError):
         ReaperStudioAdapter._envelope_observed(data, '{track}', 1, 3)
+
+
+def test_prepares_bounded_timebase_wrapper():
+    base = Path('/private/tmp/llm-studio-reaper')
+    base.mkdir(exist_ok=True, parents=True)
+    with tempfile.TemporaryDirectory(prefix='test-timebase-', dir=base) as name:
+        source = Path(name) / 'source.RPP'
+        profile = Path(name) / 'profile'
+        source.write_text('<REAPER_PROJECT 0.1\n>\n')
+        profile.mkdir()
+        cfgfile = profile / 'reaper.ini'
+        cfgfile.write_text('[REAPER]\n')
+        result = subprocess.run(
+            [sys.executable, 'tools/qualification/reaper_automation_timebase.py',
+             '--source', str(source), '--cfgfile', str(cfgfile)],
+            check=True, text=True, capture_output=True,
+        )
+        root = Path(result.stdout.strip())
+        assert root.is_dir()
+        text = (root / 'project_time_inherited.lua').read_text()
+        assert 'STUDIO_AUTOMATION_TIMEBASE' in text
+        assert str(source) in text
+        assert 'reaper_automation_timebase.lua' in text
+        shutil.rmtree(root)

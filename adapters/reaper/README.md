@@ -125,9 +125,14 @@ bridge qualification. See the [observed report](../../docs/qualification/reaper-
 `read_volume_envelope(session, guid, start_sec=..., end_sec=...)` returns a native
 volume-envelope GUID, mode, active/armed state, project/track timebase settings,
 raw and linear values, dB/silence, shape/tension/selection and bounded points.
-Coordinates are **project seconds**. Envelope beat-attachment preferences and
-behavior across tempo changes are not yet qualified; this API does not offer
-beat-domain editing. Fader scaling is converted by REAPER's own scaling APIs.
+Coordinates are **project seconds** and this API does not offer beat-domain
+editing. Readback also reports each point's project quarter-note position plus
+the project, track and effective timebase. `attachment_domain` is
+`project_time` for effective mode 0 and `project_beats` for modes 1/2. Native
+qualification proves that time-attached points retain seconds while
+beat-attached points retain quarter-note position across a 120→60 BPM change,
+including project inheritance and track overrides. Fader scaling is converted
+by REAPER's own scaling APIs.
 
 `patch_volume_envelope(session, guid, baseline, points)` takes points with
 `time_sec` and `gain_db` (or `silent=True`). It replaces the inclusive range with

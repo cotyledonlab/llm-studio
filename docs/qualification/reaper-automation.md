@@ -1,6 +1,6 @@
 # REAPER automation qualification — issue #10
 
-Updated: 2026-09-09. **In progress; not a Gate A pass.**
+Updated: 2026-09-20. **In progress; not a Gate A pass.**
 Implementation: `feat/reaper-automation-handoff`, initial implementation `81782cb`.
 Controller remains pinned at `fd56d0008ffa5fba25cc58a70e5ae632c80b4c16`.
 Native host: REAPER `7.79/macOS-arm64`, fresh disposable profile.
@@ -16,9 +16,9 @@ This is a qualification API, not a coordinator or production write lease.
 
 Points use project seconds. Raw fader values are converted using REAPER's
 [documented scaling APIs](https://www.reaper.fm/sdk/reascript/reascripthelp.html#GetEnvelopeScalingMode).
-Project and track timebase settings are captured; envelope beat-attachment
-preferences and tempo-change behavior remain unqualified. No beat-domain edit
-is exposed. The bounded patch requires existing unique endpoints with unchanged
+Project, track and effective timebase settings are captured, together with each
+point's project-seconds and quarter-note positions. No beat-domain edit is
+exposed. The bounded patch requires existing unique endpoints with unchanged
 gains and preserves the right point's outgoing shape/tension. Only new linear
 segments are offered; arbitrary nonlinear subdivision is not claimed.
 
@@ -90,13 +90,40 @@ python3 tools/qualification/reaper_automation.py \
   --cfgfile /private/tmp/llm-studio-reaper/a3-probe/profile/reaper.ini --run
 ```
 
+## 2026-09-20 installed transport, timebase and export evidence
+
+Fresh evidence used REAPER `7.80/macOS-arm64` with the controller still pinned
+at `fd56d0008ffa5fba25cc58a70e5ae632c80b4c16`. Bootstrap changed only
+`Scripts/llm_studio_reaper.lua`; verification matched all installed hashes.
+The installed daemon returned the source session, stable track/envelope GUIDs,
+manual points and effective-timebase fields through the pinned controller.
+
+Under `/private/tmp/llm-studio-reaper/automation-dxk76v2h/`, native automation
+qualification passed again. `installed-transport.json` records an installed
+file-drop 1–3 second patch and checked recovery whose recovered point records
+equal the baseline. Headless baseline/processed exports are both 5.0 seconds,
+44.1 kHz and 220,500 frames. Exterior delta outside the guarded range is zero;
+the interior delta ratio is `0.3039214039818237`.
+
+Timebase evidence is under
+`/private/tmp/llm-studio-reaper/automation-timebase-lvgmrmj3/`. Six isolated
+copies covered project modes 0/1/2, inheritance and track overrides 0/1/2.
+Across a 120→60 BPM change, effective time mode retained the two-second point
+at 2 seconds (quarter-note 4→2); effective beat modes retained quarter-note 4
+and moved the point 2→4 seconds. Adapter readback matched native positions, and
+the source RPP bytes were unchanged.
+
+`PROJECT_TIMEBASE` was observable but not writable through `GetSetProjectInfo`
+on this build, so qualification changed native `TIMELOCKMODE` only in unopened
+copies. Opening a second project from one running ReaScript also ended that
+script's continuation; the final runner forwards one script per isolated case.
+
 ## Outstanding
 
 - Actual intervening human-edit rejection, distinct from native API simulation.
-- Updated installed handler through the pinned Python controller transport.
-- Exported audio verification of the range and unchanged exterior.
-- Envelope beat-attachment/timebase semantics and quantitative freshness latency.
-- Full A03–A06/A15 acceptance review, including the limits of synchronous
+- Empirical human-edit detection latency. The watcher refreshes at 20 seconds
+  against a 30-second receipt expiry, but no human edit was observed to measure.
+- Final A03–A06/A15 producer acceptance review, including the limits of synchronous
   serialization for human-edit ordering. No artificial mid-callback UI edit is
   claimed, and no atomicity claim is made for arbitrary external extensions.
 

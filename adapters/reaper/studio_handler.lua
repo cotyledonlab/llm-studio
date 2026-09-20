@@ -74,6 +74,18 @@ end
 local observations, observation_order, undo_receipts = {}, {}, {}
 local MAX_POINTS, MAX_CHUNK, FRESH_SECONDS = 2048, 262144, 30
 
+local function timebase_state(track)
+  local project = reaper.GetSetProjectInfo(0, 'PROJECT_TIMEBASE', 0, false)
+  local override = reaper.GetMediaTrackInfo_Value(track, 'C_BEATATTACHMODE')
+  if (project ~= 0 and project ~= 1 and project ~= 2)
+      or (override ~= -1 and override ~= 0 and override ~= 1 and override ~= 2) then
+    return nil, 'unknown project or track timebase'
+  end
+  local effective = override == -1 and project or override
+  return {project=project, track=override, effective=effective,
+    attachment_domain=effective == 0 and 'project_time' or 'project_beats'}
+end
+
 local function has_automation(track, name)
   local env = reaper.GetTrackEnvelopeByChunkName(track, name)
   if not env then return false end
@@ -93,6 +105,8 @@ local function envelope_state(track, first, last)
   if not got_guid or guid == '' then return nil, 'native envelope GUID unavailable' end
   local scale = reaper.GetEnvelopeScalingMode(env)
   if scale ~= 0 and scale ~= 1 then return nil, 'unknown gain scaling' end
+  local timebase, timebase_error = timebase_state(track)
+  if not timebase then return nil, timebase_error end
   local points, bounded, previous = {}, {}, -math.huge
   for i = 0, count - 1 do
     local got, time, raw, shape, tension, selected = reaper.GetEnvelopePointEx(env, -1, i)
@@ -101,24 +115,27 @@ local function envelope_state(track, first, last)
     end
     previous = time
     local volume = reaper.ScaleFromEnvelopeMode(scale, raw)
-    if not finite(volume) or volume < 0 then return nil, 'invalid envelope gain' end
-    local point = {time_sec=time, volume=volume, raw_value=raw, shape=shape, tension=tension, selected=selected}
+    local quarter_note = reaper.TimeMap2_timeToQN(0, time)
+    if not finite(volume) or volume < 0 or not finite(quarter_note) then
+      return nil, 'invalid envelope gain or musical position'
+    end
+    local point = {time_sec=time, quarter_note=quarter_note, volume=volume,
+      raw_value=raw, shape=shape, tension=tension, selected=selected}
     points[#points+1] = point
     if time >= first and time <= last then bounded[#bounded+1] = point end
   end
   local _, active = reaper.GetSetEnvelopeInfo_String(env, 'ACTIVE', '', false)
   local _, armed = reaper.GetSetEnvelopeInfo_String(env, 'ARM', '', false)
   local mode, override = reaper.GetTrackAutomationMode(track), reaper.GetGlobalAutomationOverride()
-  local project_timebase = reaper.GetSetProjectInfo(0, 'PROJECT_TIMEBASE', 0, false)
-  local track_timebase = reaper.GetMediaTrackInfo_Value(track, 'C_BEATATTACHMODE')
   local state = {envelope_guid=guid, track_guid=reaper.GetTrackGUID(track), points=bounded,
     start_sec=first, end_sec=last, time_domain='project_seconds', scaling_mode=scale,
     automation_mode=mode, global_override=override, active=active, armed=armed,
-    project_timebase=project_timebase, track_timebase=track_timebase,
+    project_timebase=timebase.project, track_timebase=timebase.track,
+    effective_timebase=timebase.effective, attachment_domain=timebase.attachment_domain,
     state_change_count=reaper.GetProjectStateChangeCount(0), observed_at=reaper.time_precise(),
     max_age_sec=FRESH_SECONDS}
   -- Include host settings alongside the exact chunk; selection changes conflict too.
-  local signature = chunk .. '\n' .. table.concat({mode, override, project_timebase, track_timebase}, ':')
+  local signature = chunk .. '\n' .. table.concat({mode, override, timebase.project, timebase.track}, ':')
   return {env=env, chunk=chunk, signature=signature, all=points, public=state}
 end
 

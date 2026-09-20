@@ -2,6 +2,7 @@
 -- Native qualification is separate; this host can inject failures deterministically.
 local path, handler_path = ...
 local clock, revision, serial, mode, override, play = 0, 1, 0, 0, -1, 0
+local project_timebase, track_timebase = 1, 0
 local points = {{0,1,0,0,false},{1,.9,0,0,false},{2,.8,5,.3,true},{3,.7,5,.2,false},{4,.6,0,0,false}}
 local active, items, fail_insert, begin_count, end_count = '1', 0, false, 0, 0
 local function clone(v) local out={} for i,p in ipairs(v) do out[i]={table.unpack(p)} end return out end
@@ -28,8 +29,9 @@ reaper = {
  ScaleToEnvelopeMode=function(_,v) return v end,
  GetTrackAutomationMode=function() return mode end,
  GetGlobalAutomationOverride=function() return override end,
- GetSetProjectInfo=function() return 1 end,
- GetMediaTrackInfo_Value=function() return 0 end,
+	GetSetProjectInfo=function() return project_timebase end,
+	GetMediaTrackInfo_Value=function(_,key) return key=='C_BEATATTACHMODE' and track_timebase or 0 end,
+	TimeMap2_timeToQN=function(_,time) return time*2 end,
  GetProjectStateChangeCount=function() return revision end,
  time_precise=function() return clock end, GetPlayState=function() return play end,
  DeleteEnvelopePointEx=function(_,_,i) table.remove(points,i+1); revision=revision+1; return true end,
@@ -50,10 +52,16 @@ local function call(op,expected)
  assert(result,err);return result
 end
 local function observe()
- local r=call('read_volume_envelope');p.fingerprint=r.fingerprint;p.envelope_guid=r.envelope_guid
+	 local r=call('read_volume_envelope');p.fingerprint=r.fingerprint;p.envelope_guid=r.envelope_guid
+	 assert(r.project_timebase==1 and r.track_timebase==0 and r.effective_timebase==0
+	   and r.attachment_domain=='project_time' and r.points[1].quarter_note==2)
  p.points={{time_sec=1,volume=.9},{time_sec=2,volume=.3},{time_sec=3,volume=.7}}
  return r
 end
+track_timebase=-1
+local inherited=call('read_volume_envelope')
+assert(inherited.effective_timebase==1 and inherited.attachment_domain=='project_beats')
+track_timebase=0
 observe();local before=chunk();points[3][2]=.4 -- direct edit without revision notification
 call('patch_volume_envelope','CONFLICT');assert(points[3][2]==.4)
 observe();revision=revision+1;call('patch_volume_envelope','CONFLICT')
