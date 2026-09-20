@@ -26,6 +26,11 @@ def test_packaged_catalogue_exposes_exact_three_roles_and_fixtures() -> None:
     assert len(instruments) == 3
     assert all(instrument.fixture["events"] for instrument in instruments)
     assert all(instrument.qualification == "candidate" for instrument in instruments)
+    assert all(instrument.data["parameters"] for instrument in instruments)
+    assert all(
+        instrument.data["render"]["sample_rates"] == (48000,)
+        for instrument in instruments
+    )
 
 
 def test_unknown_id_does_not_substitute_another_sound() -> None:
@@ -47,6 +52,22 @@ def test_backend_specific_fields_are_required() -> None:
 
     with pytest.raises(CatalogueError, match="backend.*missing fields.*executable"):
         Catalogue(document)
+
+
+def test_parameter_metadata_and_render_contract_are_required() -> None:
+    document = copy.deepcopy(packaged_document())
+    document["instruments"][0].pop("parameters")
+
+    with pytest.raises(CatalogueError, match="missing fields.*parameters"):
+        Catalogue(document)
+
+
+def test_packaged_dexed_state_is_content_addressed() -> None:
+    instrument = Catalogue.packaged().get("studio.keys.dexed-factory-v1")
+
+    state = instrument.restored_state()
+
+    assert hashlib.sha256(state).hexdigest() == instrument.data["state"]["raw_state_sha256"]
 
 
 def test_returned_catalogue_state_is_deeply_immutable() -> None:

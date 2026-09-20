@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
+import errno
 import hashlib
 import json
 import os
@@ -11,6 +13,7 @@ import platform
 import resource
 import shutil
 import struct
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -36,6 +39,38 @@ def _fsync_directory(path: Path) -> None:
         os.fsync(descriptor)
     finally:
         os.close(descriptor)
+
+
+def _rename_no_replace(source: Path, destination: Path) -> None:
+    """Atomically rename a directory while refusing an existing destination."""
+
+    libc = ctypes.CDLL(None, use_errno=True)
+    source_bytes = os.fsencode(source)
+    destination_bytes = os.fsencode(destination)
+    if sys.platform == "darwin":
+        rename = libc.renamex_np
+        rename.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
+        arguments = (source_bytes, destination_bytes, 0x00000004)  # RENAME_EXCL
+    elif sys.platform.startswith("linux"):
+        rename = libc.renameat2
+        rename.argtypes = [
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_uint,
+        ]
+        arguments = (-100, source_bytes, -100, destination_bytes, 0x00000001)
+    else:
+        raise OSError(
+            errno.ENOTSUP,
+            f"atomic no-replace publication is unsupported on {sys.platform}",
+        )
+    rename.restype = ctypes.c_int
+    ctypes.set_errno(0)
+    if rename(*arguments) != 0:
+        error = ctypes.get_errno()
+        raise OSError(error, os.strerror(error), str(destination))
 
 
 def midi_schedule(fixture: dict) -> list[tuple[bytes, float]]:
@@ -82,6 +117,7 @@ def measurements(audio, sample_rate: int, start_s: float, musical_end_s: float) 
         "sample_rate": sample_rate,
         "channels": int(audio.shape[0]),
         "frames": int(audio.shape[1]),
+        "sample_sha256": digest(np.asarray(audio, dtype="<f4").tobytes(order="C")),
         "duration_s": audio.shape[1] / sample_rate,
         "peak": float(np.max(absolute)),
         "rms": float(np.sqrt(np.mean(np.square(audio, dtype=np.float64)))),
@@ -217,6 +253,15 @@ def render_supercollider(instrument: Instrument, output: Path) -> tuple[dict, di
 
     fixture = instrument.fixture
     definitions = sc_definitions(instrument)
+    observed_definition_hashes = {
+        name: digest(definition.compile()) for name, definition in definitions.items()
+    }
+    expected_definition_hashes = plain(instrument.data["state"]["synthdef_sha256"])
+    if observed_definition_hashes != expected_definition_hashes:
+        raise RuntimeError(
+            f"{instrument.id} SynthDef integrity check failed: expected "
+            f"{expected_definition_hashes}, found {observed_definition_hashes}"
+        )
     score = supriya.Score()
     with score.at(0):
         score.add_synthdefs(*definitions.values())
@@ -261,9 +306,7 @@ def render_supercollider(instrument: Instrument, output: Path) -> tuple[dict, di
         "scsynth": instrument.runtime["executable_version"],
         "scsynth_path": instrument.runtime["executable"],
         "supriya": supriya.__version__,
-        "synthdef_sha256": {
-            name: digest(definition.compile()) for name, definition in definitions.items()
-        },
+        "synthdef_sha256": observed_definition_hashes,
     }
     return measurements(audio, rate, float(fixture["start_s"]), float(fixture["start_s"]) + float(fixture["duration_s"])), engine
 
@@ -276,10 +319,14 @@ def render_pedalboard(instrument: Instrument, output: Path) -> tuple[dict, dict]
     plugin_path = Path(instrument.runtime["assets"][0])
     bundle = plugin_path.parents[2]
     plugin = load_plugin(str(bundle), initialization_timeout=20.0)
-    observed_state = digest(plugin.raw_state)
+    restored_state = instrument.restored_state()
     expected_state = instrument.data["state"]["raw_state_sha256"]
+    plugin.raw_state = restored_state
+    observed_state = digest(plugin.raw_state)
     if observed_state != expected_state:
-        raise RuntimeError(f"Dexed factory state requires SHA-256 {expected_state}; found {observed_state}")
+        raise RuntimeError(
+            f"Dexed state restore requires SHA-256 {expected_state}; found {observed_state}"
+        )
     fixture = instrument.fixture
     duration = float(fixture["start_s"]) + float(fixture["duration_s"]) + float(fixture["tail_s"])
     audio = plugin.process(
@@ -306,6 +353,7 @@ def render(instrument_id: str, result: Path) -> dict:
     if result.exists():
         raise FileExistsError(f"immutable audition result already exists: {result}")
     staging = Path(tempfile.mkdtemp(prefix=f".{result.name}.", dir=result.parent))
+    published = False
     audio_path = staging / "audio.wav"
     started = time.monotonic()
     self_before = resource.getrusage(resource.RUSAGE_SELF)
@@ -350,18 +398,19 @@ def render(instrument_id: str, result: Path) -> dict:
         }
         _write_manifest(staging / "manifest.json", manifest)
         _fsync_directory(staging)
-        _fsync_directory(result.parent)
         try:
-            os.rename(staging, result)
+            _rename_no_replace(staging, result)
         except OSError as exc:
-            if result.exists():
+            if result.exists() or result.is_symlink():
                 raise FileExistsError(
                     f"immutable audition result already exists: {result}"
                 ) from exc
             raise
+        published = True
+        _fsync_directory(result.parent)
         return manifest
     finally:
-        if staging.exists():
+        if not published and staging.exists():
             shutil.rmtree(staging)
 
 

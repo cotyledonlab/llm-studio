@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import gzip
 import hashlib
 import json
 import re
@@ -30,6 +32,10 @@ def _file_hash(path: Path) -> str:
         for block in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def _bytes_hash(value: bytes) -> str:
+    return hashlib.sha256(value).hexdigest()
 
 
 def _freeze(value: Any) -> Any:
@@ -74,6 +80,34 @@ class Instrument:
     @property
     def qualification(self) -> str:
         return str(self.data["qualification"]["status"])
+
+    def restored_state(self) -> bytes:
+        """Load and verify a packaged plugin state artifact."""
+
+        state = self.data["state"]
+        resource_name = state.get("resource")
+        if not resource_name:
+            raise CatalogueError(f"{self.id} does not declare a packaged state artifact")
+        if Path(resource_name).name != resource_name:
+            raise CatalogueError(f"invalid state resource path for {self.id}")
+        try:
+            encoded = (
+                resources.files("llm_studio.catalogue_data")
+                .joinpath("states", resource_name)
+                .read_text()
+            )
+            if state.get("encoding") != "gzip+base64":
+                raise ValueError(f"unsupported encoding {state.get('encoding')!r}")
+            restored = gzip.decompress(base64.b64decode(encoded.strip(), validate=True))
+        except (OSError, ValueError) as exc:
+            raise CatalogueError(f"invalid packaged state artifact for {self.id}: {exc}") from exc
+        observed = _bytes_hash(restored)
+        if observed != state["raw_state_sha256"]:
+            raise CatalogueError(
+                f"state artifact integrity check failed for {self.id}: "
+                f"expected {state['raw_state_sha256']}, found {observed}"
+            )
+        return restored
 
 
 class Catalogue:
@@ -232,8 +266,9 @@ class Catalogue:
     def _validate_entry(entry: object) -> None:
         entry = _required(entry, {
             "id", "name", "role", "backend", "state", "state_sha256", "assets",
-            "provenance", "playable_range", "mappings", "audition_fixture",
-            "audition_fixture_sha256", "qualification",
+            "provenance", "category", "timbre_descriptors", "articulations",
+            "playable_range", "parameters", "mappings", "render", "resources",
+            "audition_fixture", "audition_fixture_sha256", "qualification",
         }, "instrument catalogue entry")
         identifier = entry["id"]
         if not isinstance(identifier, str) or not identifier:
@@ -256,18 +291,27 @@ class Catalogue:
                 backend, {"executable", "python_version"}, f"backend for {identifier}"
             )
             _required(
-                entry["state"], {"synthdef", "parameters", "seed"},
+                entry["state"], {"synthdef", "parameters", "seed", "synthdef_sha256"},
                 f"state for {identifier}",
             )
         elif backend["name"] == "Pedalboard VST3":
             _required(
-                entry["state"], {"kind", "plugin", "raw_state_sha256"},
+                entry["state"],
+                {"kind", "plugin", "raw_state_sha256", "resource", "encoding"},
                 f"state for {identifier}",
             )
             if not entry["assets"]:
                 raise CatalogueError(f"Pedalboard backend for {identifier} requires an asset")
         else:
             raise CatalogueError(f"unsupported backend for {identifier}: {backend['name']}")
+        if not isinstance(entry["category"], str) or not entry["category"]:
+            raise CatalogueError(f"invalid category for {identifier}")
+        for field_name in ("timbre_descriptors", "articulations"):
+            values = entry[field_name]
+            if not isinstance(values, list) or not values or not all(
+                isinstance(value, str) and value for value in values
+            ):
+                raise CatalogueError(f"invalid {field_name} for {identifier}")
         playable = _required(
             entry["playable_range"], {"midi_min", "midi_max"},
             f"playable range for {identifier}",
@@ -278,6 +322,53 @@ class Catalogue:
             entry["mappings"], {"drum_map", "controllers", "keyswitches"},
             f"mappings for {identifier}",
         )
+        parameters = entry["parameters"]
+        if not isinstance(parameters, list) or not parameters:
+            raise CatalogueError(f"parameters for {identifier} are not a nonempty list")
+        parameter_ids: set[str] = set()
+        for parameter in parameters:
+            parameter = _required(
+                parameter, {"id", "unit", "minimum", "maximum", "default"},
+                f"parameter for {identifier}",
+            )
+            if parameter["id"] in parameter_ids:
+                raise CatalogueError(f"duplicate parameter {parameter['id']} for {identifier}")
+            parameter_ids.add(parameter["id"])
+            if (
+                parameter["minimum"] > parameter["default"]
+                or parameter["default"] > parameter["maximum"]
+            ):
+                raise CatalogueError(f"parameter default is out of range for {identifier}")
+        render = _required(
+            entry["render"],
+            {
+                "sample_rates", "channels", "preroll_s", "tail_s",
+                "observed_latency_samples", "reproducibility",
+            },
+            f"render contract for {identifier}",
+        )
+        if (
+            not isinstance(render["sample_rates"], list)
+            or not render["sample_rates"]
+            or not all(isinstance(rate, int) and rate > 0 for rate in render["sample_rates"])
+            or render["channels"] not in {1, 2}
+            or render["preroll_s"] < 0
+            or render["tail_s"] < 0
+            or render["reproducibility"] not in {
+                "bit-exact-sample-data", "tolerance-bounded", "unqualified"
+            }
+            or (
+                render["observed_latency_samples"] is not None
+                and render["observed_latency_samples"] < 0
+            )
+        ):
+            raise CatalogueError(f"invalid render contract for {identifier}")
+        resource_estimates = _required(
+            entry["resources"], {"cpu_s_estimate", "peak_rss_bytes_estimate"},
+            f"resource estimates for {identifier}",
+        )
+        if any(value is not None and value < 0 for value in resource_estimates.values()):
+            raise CatalogueError(f"invalid resource estimates for {identifier}")
         _required(entry["provenance"], {"reference"}, f"provenance for {identifier}")
         qualification = _required(
             entry["qualification"], {"status", "evidence"},
@@ -300,6 +391,11 @@ class Catalogue:
         )
         if fixture["schema_version"] != 1 or fixture["sample_rate"] <= 0:
             raise CatalogueError(f"invalid fixture metadata for {entry['id']}")
+        render = entry["render"]
+        if fixture["sample_rate"] not in render["sample_rates"]:
+            raise CatalogueError(f"fixture uses an unsupported sample rate for {entry['id']}")
+        if fixture["start_s"] < render["preroll_s"] or fixture["tail_s"] < render["tail_s"]:
+            raise CatalogueError(f"fixture does not satisfy the render contract for {entry['id']}")
         if fixture["start_s"] < 0 or fixture["duration_s"] <= 0 or fixture["tail_s"] < 0:
             raise CatalogueError(f"invalid fixture timing for {entry['id']}")
         if not isinstance(fixture["events"], list) or not fixture["events"]:

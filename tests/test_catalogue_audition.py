@@ -151,22 +151,44 @@ def test_result_directory_is_published_as_one_immutable_unit(tmp_path, monkeypat
 def test_concurrent_publisher_cannot_replace_winning_result(tmp_path, monkeypatch) -> None:
     instrument = mock_instrument()
     monkeypatch.setattr(audition.Catalogue, "packaged", lambda: MockCatalogue(instrument))
-    monkeypatch.setattr(audition, "render_supercollider", successful_mock_render)
     result = tmp_path / "audition-result"
 
-    def lose_race(source, destination):
-        destination.mkdir()
-        (destination / "audio.wav").write_bytes(b"winner")
-        (destination / "manifest.json").write_text('{"winner": true}\n')
-        raise FileExistsError("race")
+    def lose_race(instrument, output):
+        output.write_bytes(b"loser")
+        result.mkdir()
+        (result / "audio.wav").write_bytes(b"winner")
+        (result / "manifest.json").write_text('{"winner": true}\n')
+        return ({"sample_rate": 48000, "channels": 2, "frames": 1}, {"mock": "1"})
 
-    monkeypatch.setattr(audition.os, "rename", lose_race)
+    monkeypatch.setattr(audition, "render_supercollider", lose_race)
 
     with pytest.raises(FileExistsError, match="immutable audition result"):
         audition.render(instrument.id, result)
 
     assert (result / "audio.wav").read_bytes() == b"winner"
     assert not any(path.name.startswith(".audition-result.") for path in tmp_path.iterdir())
+
+
+def test_publication_fsyncs_parent_after_atomic_rename(tmp_path, monkeypatch) -> None:
+    instrument = mock_instrument()
+    monkeypatch.setattr(audition.Catalogue, "packaged", lambda: MockCatalogue(instrument))
+    monkeypatch.setattr(audition, "render_supercollider", successful_mock_render)
+    events = []
+    real_rename = audition._rename_no_replace
+
+    def record_rename(*args, **kwargs):
+        events.append("publish")
+        return real_rename(*args, **kwargs)
+
+    monkeypatch.setattr(audition, "_rename_no_replace", record_rename)
+    monkeypatch.setattr(audition, "_fsync_directory", lambda path: events.append(path.name))
+    result = tmp_path / "audition-result"
+
+    audition.render(instrument.id, result)
+
+    assert result.is_dir()
+    assert not result.is_symlink()
+    assert events[-2:] == ["publish", tmp_path.name]
 
 
 def test_manifest_failure_publishes_nothing_and_cleans_staging(tmp_path, monkeypatch) -> None:
@@ -210,6 +232,25 @@ def test_supercollider_render_uses_validated_executable(tmp_path, monkeypatch) -
 
     assert captured["executable"] == "/validated/scsynth"
     assert engine["scsynth"] == "scsynth 3.14.1 build 426edf6"
+
+
+def test_supercollider_render_rejects_definition_drift(tmp_path) -> None:
+    pytest.importorskip("numpy")
+    pytest.importorskip("supriya")
+    instrument = Catalogue.packaged().check_dependencies(
+        "studio.bass.sc-pulse-v1",
+        executables={"scsynth": Path("/validated/scsynth")},
+        executable_versions={"scsynth": "scsynth 3.14.1 build 426edf6"},
+        distributions={"supriya": "26.9b0"},
+    )
+    state = dict(instrument.data["state"])
+    state["synthdef_sha256"] = {"bass": "0" * 64}
+    data = dict(instrument.data)
+    data["state"] = state
+    drifted = type(instrument)(data, instrument.fixture, instrument.runtime)
+
+    with pytest.raises(RuntimeError, match="SynthDef integrity check failed"):
+        audition.render_supercollider(drifted, tmp_path / "audio.wav")
 
 
 @pytest.mark.parametrize(
