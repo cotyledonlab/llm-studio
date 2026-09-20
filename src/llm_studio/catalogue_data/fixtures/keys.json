@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "instrument_id": "studio.keys.dexed-factory-v1",
+  "sample_rate": 48000,
+  "start_s": 0.25,
+  "duration_s": 2.0,
+  "tail_s": 0.75,
+  "events": [
+    {"at_s": 0.0, "midi_note": 60, "velocity": 88, "duration_s": 2.0},
+    {"at_s": 0.0, "midi_note": 64, "velocity": 84, "duration_s": 2.0},
+    {"at_s": 0.0, "midi_note": 67, "velocity": 82, "duration_s": 2.0},
+    {"at_s": 0.4, "controller": 64, "value": 127},
+    {"at_s": 1.5, "controller": 64, "value": 0}
+  ]
+}

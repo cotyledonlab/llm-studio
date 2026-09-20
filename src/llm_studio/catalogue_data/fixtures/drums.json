@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "instrument_id": "studio.drums.sc-basic-v1",
+  "sample_rate": 48000,
+  "start_s": 0.25,
+  "duration_s": 2.0,
+  "tail_s": 0.5,
+  "events": [
+    {"at_s": 0.0, "midi_note": 36, "velocity": 110, "duration_s": 0.1},
+    {"at_s": 0.5, "midi_note": 42, "velocity": 80, "duration_s": 0.05},
+    {"at_s": 1.0, "midi_note": 38, "velocity": 105, "duration_s": 0.1},
+    {"at_s": 1.5, "midi_note": 42, "velocity": 72, "duration_s": 0.05}
+  ]
+}

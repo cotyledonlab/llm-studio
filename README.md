@@ -8,6 +8,12 @@ Issue #9 now has a [bootstrap CLI and thin adapter](adapters/reaper/README.md),
 with [native handler and rendered audio evidence](docs/qualification/reaper-environment.md).
 Installed-profile/bridge-restart and producer-fader acceptance remain open.
 
+Issue #14 has a strict three-entry
+[instrument catalogue](docs/qualification/instrument-catalogue.md) with pinned
+state/fixture hashes and exact dependency errors. Its native Mac renders and
+producer audition remain an explicit qualification handoff; entries are not
+yet advertised as qualified sounds.
+
 ## Start here
 
 - [Product and engineering specification](SPEC.md) — requirements, architecture, contracts, manual-control rules and acceptance matrix.

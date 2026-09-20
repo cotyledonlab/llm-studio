@@ -1,0 +1,155 @@
+{
+  "schema_version": 1,
+  "instruments": [
+    {
+      "id": "studio.drums.sc-basic-v1",
+      "name": "SC Basic Electronic Kit",
+      "role": "drums",
+      "backend": {
+        "name": "SuperCollider NRT",
+        "version": "3.14.1",
+        "build_hash": "426edf6",
+        "executable": "scsynth",
+        "python_distribution": "supriya",
+        "python_version": "26.9b0"
+      },
+      "state": {
+        "synthdef": "llm_studio_basic_kit_v1",
+        "parameters": {"level": 0.2, "kick_decay_s": 0.3, "snare_decay_s": 0.18, "hat_decay_s": 0.06},
+        "seed": 1729,
+        "synthdef_sha256": {
+          "kick": "a81d45afb92b4ad9edd9e23d93589a5ad5c63be09bf7d67303fa2176d1ec5065",
+          "snare": "71926eb3d2bc50d8a70142dfd4e7d504cbcbc9938a891e96dc8ae9cccc697d67",
+          "closed_hat": "ed9d463e9bd3b4614f45614e873f78a6d459638d4fe962ae8a3589407ca5631c"
+        }
+      },
+      "state_sha256": "fb42549852238a09115046869235c58d0afb077a8df52ff80e99ddb83854977c",
+      "assets": [],
+      "provenance": {
+        "source": "Repository-authored SynthDef using stock SuperCollider UGens only",
+        "licence": "Repository licence pending; SuperCollider GPL-3.0-or-later runtime is external",
+        "redistribution": "No samples or plugin binaries required",
+        "reference": "docs/qualification/instrument-catalogue.md"
+      },
+      "category": "electronic drum kit",
+      "timbre_descriptors": ["dry", "electronic", "compact"],
+      "articulations": ["kick", "snare", "closed hat"],
+      "playable_range": {"midi_min": 36, "midi_max": 42},
+      "parameters": [
+        {"id": "level", "unit": "linear gain", "minimum": 0.0, "maximum": 1.0, "default": 0.2},
+        {"id": "kick_decay_s", "unit": "seconds", "minimum": 0.001, "maximum": 5.0, "default": 0.3},
+        {"id": "snare_decay_s", "unit": "seconds", "minimum": 0.001, "maximum": 5.0, "default": 0.18},
+        {"id": "hat_decay_s", "unit": "seconds", "minimum": 0.001, "maximum": 5.0, "default": 0.06}
+      ],
+      "mappings": {
+        "drum_map": {"36": "kick", "38": "snare", "42": "closed_hat"},
+        "controllers": {},
+        "keyswitches": {}
+      },
+      "render": {"sample_rates": [48000], "channels": 2, "preroll_s": 0.25, "tail_s": 0.5, "observed_latency_samples": 33, "reproducibility": "bit-exact-sample-data"},
+      "resources": {"cpu_s_estimate": 0.511, "peak_rss_bytes_estimate": 74694656},
+      "audition_fixture": "drums.json",
+      "audition_fixture_sha256": "3a04e6cc98bf76de34c63dc14f9fcd56f588603ec0522470d6f5e7928356cf5c",
+      "qualification": {"status": "candidate", "evidence": null}
+    },
+    {
+      "id": "studio.bass.sc-pulse-v1",
+      "name": "SC Pulse Bass",
+      "role": "bass",
+      "backend": {
+        "name": "SuperCollider NRT",
+        "version": "3.14.1",
+        "build_hash": "426edf6",
+        "executable": "scsynth",
+        "python_distribution": "supriya",
+        "python_version": "26.9b0"
+      },
+      "state": {
+        "synthdef": "llm_studio_pulse_bass_v1",
+        "parameters": {"level": 0.16, "attack_s": 0.005, "release_s": 0.12, "pulse_width": 0.45},
+        "seed": 1729,
+        "synthdef_sha256": {
+          "bass": "d9cb388492c1f01fa7e0d7393d84668ed44fdef1e99ac23b6a138a3e2c842dfb"
+        }
+      },
+      "state_sha256": "b7cfddcf643b0f909890235e4d183accc8ec00e0cee3024306e867a22644aa06",
+      "assets": [],
+      "provenance": {
+        "source": "Repository-authored SynthDef using stock SuperCollider UGens only",
+        "licence": "Repository licence pending; SuperCollider GPL-3.0-or-later runtime is external",
+        "redistribution": "No samples or plugin binaries required",
+        "reference": "docs/qualification/instrument-catalogue.md"
+      },
+      "category": "synth bass",
+      "timbre_descriptors": ["pulse", "filtered", "dry"],
+      "articulations": ["sustain", "overlap"],
+      "playable_range": {"midi_min": 28, "midi_max": 60},
+      "parameters": [
+        {"id": "level", "unit": "linear gain", "minimum": 0.0, "maximum": 1.0, "default": 0.16},
+        {"id": "attack_s", "unit": "seconds", "minimum": 0.001, "maximum": 5.0, "default": 0.005},
+        {"id": "release_s", "unit": "seconds", "minimum": 0.001, "maximum": 5.0, "default": 0.12},
+        {"id": "pulse_width", "unit": "ratio", "minimum": 0.01, "maximum": 0.99, "default": 0.45}
+      ],
+      "mappings": {"drum_map": {}, "controllers": {}, "keyswitches": {}},
+      "render": {"sample_rates": [48000], "channels": 2, "preroll_s": 0.25, "tail_s": 0.5, "observed_latency_samples": 33, "reproducibility": "bit-exact-sample-data"},
+      "resources": {"cpu_s_estimate": 0.496, "peak_rss_bytes_estimate": 74760192},
+      "audition_fixture": "bass.json",
+      "audition_fixture_sha256": "36f7eaa97c55e02a479ff35063066aa847d8f3746a33c670cfa37878bdcbd2cd",
+      "qualification": {"status": "candidate", "evidence": null}
+    },
+    {
+      "id": "studio.keys.dexed-factory-v1",
+      "name": "Dexed Factory Keys",
+      "role": "keys",
+      "backend": {
+        "name": "Pedalboard VST3",
+        "version": "0.9.24",
+        "build_hash": "0e81334bedc78883ab69822608e5f90508547ed9c24ba7f72c1f60f83106bcb2",
+        "build_hash_kind": "instrument_executable_sha256",
+        "python_distribution": "pedalboard"
+      },
+      "state": {
+        "kind": "packaged-vst3-state",
+        "plugin": "Dexed 1.0.1",
+        "raw_state_sha256": "0f040f287d2933ef59253f5b4aea74a95c825c00759667dbd905a97da39b2c96",
+        "resource": "dexed-factory-v1.vststate.gz.b64",
+        "encoding": "gzip+base64"
+      },
+      "state_sha256": "4c599d8c1a22c6e8c7d7d4d95bd3351fb09910e95a43c8605361421e8a6b39a6",
+      "assets": [
+        {
+          "name": "Dexed VST3 executable",
+          "path": "$HOME/Library/Audio/Plug-Ins/VST3/Dexed.vst3/Contents/MacOS/Dexed",
+          "sha256": "0e81334bedc78883ab69822608e5f90508547ed9c24ba7f72c1f60f83106bcb2",
+          "install_hint": "install Dexed VST3 1.0.1 from https://asb2m10.github.io/dexed/"
+        }
+      ],
+      "provenance": {
+        "source": "Dexed 1.0.1 factory state; no external cartridge or samples",
+        "licence": "Dexed GPL-3.0; Pedalboard GPL-3.0",
+        "redistribution": "Plugin bundle is not committed; acquire from upstream",
+        "reference": "docs/qualification/pedalboard-rendering.md"
+      },
+      "category": "FM electric piano",
+      "timbre_descriptors": ["bright", "digital", "sustaining"],
+      "articulations": ["sustain pedal", "overlapping notes"],
+      "playable_range": {"midi_min": 36, "midi_max": 96},
+      "parameters": [
+        {"id": "cc64_sustain", "unit": "MIDI CC value", "minimum": 0, "maximum": 127, "default": 0}
+      ],
+      "mappings": {
+        "drum_map": {},
+        "controllers": {"64": "sustain pedal"},
+        "keyswitches": {}
+      },
+      "render": {"sample_rates": [48000], "channels": 2, "preroll_s": 0.25, "tail_s": 0.75, "observed_latency_samples": 57, "reproducibility": "bit-exact-sample-data"},
+      "resources": {"cpu_s_estimate": 0.530, "peak_rss_bytes_estimate": 80101376},
+      "audition_fixture": "keys.json",
+      "audition_fixture_sha256": "0f011f0634bfe811c86cec629e3c0561e3cd489aa2659fa01bf683aa71f21d5e",
+      "qualification": {
+        "status": "candidate",
+        "evidence": "docs/qualification/pedalboard-rendering.md qualifies the engine/factory-state baseline, not this musical catalogue entry"
+      }
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "instrument_id": "studio.bass.sc-pulse-v1",
+  "sample_rate": 48000,
+  "start_s": 0.25,
+  "duration_s": 2.0,
+  "tail_s": 0.5,
+  "events": [
+    {"at_s": 0.0, "midi_note": 36, "velocity": 100, "duration_s": 0.7},
+    {"at_s": 0.5, "midi_note": 43, "velocity": 92, "duration_s": 0.7},
+    {"at_s": 1.0, "midi_note": 36, "velocity": 96, "duration_s": 0.7}
+  ]
+}
