@@ -9,31 +9,33 @@ import json
 import os
 import platform
 import resource
+import shutil
 import struct
 import tempfile
 import time
 from pathlib import Path
 
-from llm_studio.catalogue import Catalogue, Instrument
+from llm_studio.catalogue import Catalogue, Instrument, plain
 
 
 def digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def atomic_json(path: Path, value: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+def _write_manifest(path: Path, value: dict) -> None:
+    with path.open("w") as stream:
+        json.dump(value, stream, allow_nan=False, indent=2, sort_keys=True)
+        stream.write("\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+
+
+def _fsync_directory(path: Path) -> None:
+    descriptor = os.open(path, os.O_RDONLY)
     try:
-        with os.fdopen(fd, "w") as stream:
-            json.dump(value, stream, indent=2, sort_keys=True)
-            stream.write("\n")
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(temporary, path)
-    except BaseException:
-        Path(temporary).unlink(missing_ok=True)
-        raise
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
 
 
 def midi_schedule(fixture: dict) -> list[tuple[bytes, float]]:
@@ -96,27 +98,75 @@ def read_float_wav(path: Path):
     import numpy as np
 
     data = path.read_bytes()
-    if data[:4] != b"RIFF" or data[8:12] != b"WAVE":
+    if len(data) < 12 or data[:4] != b"RIFF" or data[8:12] != b"WAVE":
         raise RuntimeError("scsynth output is not a RIFF/WAVE file")
+    declared_size = struct.unpack_from("<I", data, 4)[0] + 8
+    if declared_size != len(data):
+        raise RuntimeError(
+            f"scsynth WAV RIFF size is {declared_size} bytes; file is {len(data)} bytes"
+        )
     offset = 12
     format_info = None
     samples = None
     while offset + 8 <= len(data):
         name = data[offset:offset + 4]
         size = struct.unpack_from("<I", data, offset + 4)[0]
-        body = data[offset + 8:offset + 8 + size]
+        body_start = offset + 8
+        body_end = body_start + size
+        padded_end = body_end + (size % 2)
+        if padded_end > len(data):
+            raise RuntimeError(f"scsynth WAV chunk {name!r} extends past end of file")
+        body = data[body_start:body_end]
         if name == b"fmt ":
+            if format_info is not None or size < 16:
+                raise RuntimeError("scsynth WAV has invalid fmt chunk")
             format_info = struct.unpack_from("<HHIIHH", body)
         elif name == b"data":
+            if samples is not None:
+                raise RuntimeError("scsynth WAV has multiple data chunks")
             samples = body
-        offset += 8 + size + (size % 2)
+        offset = padded_end
+    if offset != len(data):
+        raise RuntimeError("scsynth WAV has an incomplete trailing chunk")
     if format_info is None or samples is None:
         raise RuntimeError("scsynth WAV lacks fmt or data chunk")
-    audio_format, channels, rate, _, _, bits = format_info
+    audio_format, channels, rate, byte_rate, block_align, bits = format_info
     if audio_format != 3 or bits != 32 or channels != 2:
         raise RuntimeError(f"expected stereo float32 WAV, got format={audio_format}, channels={channels}, bits={bits}")
+    expected_align = channels * bits // 8
+    if block_align != expected_align or byte_rate != rate * expected_align:
+        raise RuntimeError("scsynth WAV has inconsistent format alignment")
+    if len(samples) % block_align:
+        raise RuntimeError("scsynth WAV data contains an incomplete sample frame")
     audio = np.frombuffer(samples, dtype="<f4").reshape(-1, channels).T.copy()
     return audio, rate
+
+
+def validate_audio(audio, sample_rate: int, fixture: dict, *, block_size: int = 0) -> None:
+    import numpy as np
+
+    expected_rate = int(fixture["sample_rate"])
+    if sample_rate != expected_rate:
+        raise RuntimeError(f"render sample rate is {sample_rate}; expected {expected_rate}")
+    if audio.ndim != 2 or audio.shape[0] != 2:
+        raise RuntimeError(f"render shape is {audio.shape}; expected stereo")
+    if not np.isfinite(audio).all():
+        raise RuntimeError("render contains non-finite samples")
+    expected_frames = round(
+        (float(fixture["start_s"]) + float(fixture["duration_s"]) + float(fixture["tail_s"]))
+        * expected_rate
+    )
+    padding = audio.shape[1] - expected_frames
+    if padding < 0 or padding > block_size:
+        raise RuntimeError(
+            f"render has {audio.shape[1]} frames; expected {expected_frames}"
+            + (f" plus at most {block_size} frames of block padding" if block_size else "")
+        )
+    peak = float(np.max(np.abs(audio)))
+    if peak <= 1e-5:
+        raise RuntimeError("render is silent")
+    if peak > 1.0:
+        raise RuntimeError(f"render clips with peak {peak}")
 
 
 def sc_definitions(instrument: Instrument):
@@ -198,13 +248,18 @@ def render_supercollider(instrument: Instrument, output: Path) -> tuple[dict, di
         sample_format="FLOAT",
         sample_rate=int(fixture["sample_rate"]),
         duration=duration,
-        options=Options(output_bus_channel_count=2),
+        options=Options(
+            executable=instrument.runtime["executable"],
+            output_bus_channel_count=2,
+        ),
     )
     if return_code or not output.exists():
         raise RuntimeError(f"scsynth NRT failed: returncode={return_code}, output={rendered}")
     audio, rate = read_float_wav(output)
+    validate_audio(audio, rate, fixture, block_size=64)
     engine = {
-        "scsynth": instrument.data["backend"]["version"],
+        "scsynth": instrument.runtime["executable_version"],
+        "scsynth_path": instrument.runtime["executable"],
         "supriya": supriya.__version__,
         "synthdef_sha256": {
             name: digest(definition.compile()) for name, definition in definitions.items()
@@ -214,13 +269,11 @@ def render_supercollider(instrument: Instrument, output: Path) -> tuple[dict, di
 
 
 def render_pedalboard(instrument: Instrument, output: Path) -> tuple[dict, dict]:
-    import numpy as np
     import pedalboard
     from pedalboard import load_plugin
     from pedalboard.io import AudioFile
 
-    asset = instrument.data["assets"][0]
-    plugin_path = Path(str(asset["path"]).replace("$HOME", str(Path.home())))
+    plugin_path = Path(instrument.runtime["assets"][0])
     bundle = plugin_path.parents[2]
     plugin = load_plugin(str(bundle), initialization_timeout=20.0)
     observed_state = digest(plugin.raw_state)
@@ -237,76 +290,87 @@ def render_pedalboard(instrument: Instrument, output: Path) -> tuple[dict, dict]
         buffer_size=512,
         reset=True,
     )
-    if not np.isfinite(audio).all() or audio.shape != (2, round(duration * fixture["sample_rate"])):
-        raise RuntimeError(f"invalid Pedalboard render shape/content: {audio.shape}")
+    validate_audio(audio, fixture["sample_rate"], fixture)
     with AudioFile(str(output), "w", fixture["sample_rate"], 2, bit_depth=32) as target:
         target.write(audio)
     engine = {"pedalboard": pedalboard.__version__, "plugin": plugin.name}
     return measurements(audio, fixture["sample_rate"], fixture["start_s"], fixture["start_s"] + fixture["duration_s"]), engine
 
 
-def render(instrument_id: str, output: Path) -> dict:
+def render(instrument_id: str, result: Path) -> dict:
     catalogue = Catalogue.packaged()
     instrument = catalogue.check_dependencies(instrument_id)
     validate_performance(instrument)
-    output = output.expanduser().resolve()
-    output.parent.mkdir(parents=True, exist_ok=True)
-    fd, temporary_name = tempfile.mkstemp(prefix=f".{output.name}.", suffix=".wav", dir=output.parent)
-    os.close(fd)
-    Path(temporary_name).unlink()
-    temporary = Path(temporary_name)
+    result = result.expanduser().resolve()
+    result.parent.mkdir(parents=True, exist_ok=True)
+    if result.exists():
+        raise FileExistsError(f"immutable audition result already exists: {result}")
+    staging = Path(tempfile.mkdtemp(prefix=f".{result.name}.", dir=result.parent))
+    audio_path = staging / "audio.wav"
     started = time.monotonic()
     self_before = resource.getrusage(resource.RUSAGE_SELF)
     children_before = resource.getrusage(resource.RUSAGE_CHILDREN)
     try:
         if instrument.data["backend"]["name"] == "SuperCollider NRT":
-            observed, engine = render_supercollider(instrument, temporary)
+            observed, engine = render_supercollider(instrument, audio_path)
         else:
-            observed, engine = render_pedalboard(instrument, temporary)
-        audio_hash = digest(temporary.read_bytes())
-        os.replace(temporary, output)
+            observed, engine = render_pedalboard(instrument, audio_path)
+        audio_hash = digest(audio_path.read_bytes())
+        with audio_path.open("rb+") as stream:
+            os.fsync(stream.fileno())
+        self_after = resource.getrusage(resource.RUSAGE_SELF)
+        children_after = resource.getrusage(resource.RUSAGE_CHILDREN)
+        cpu_s = (
+            self_after.ru_utime - self_before.ru_utime
+            + self_after.ru_stime - self_before.ru_stime
+            + children_after.ru_utime - children_before.ru_utime
+            + children_after.ru_stime - children_before.ru_stime
+        )
+        peak_rss = max(self_after.ru_maxrss, children_after.ru_maxrss)
+        manifest = {
+            "schema_version": 1,
+            "instrument_id": instrument.id,
+            "state_sha256": instrument.data["state_sha256"],
+            "fixture_sha256": instrument.data["audition_fixture_sha256"],
+            "audio_sha256": audio_hash,
+            "backend": plain(instrument.data["backend"]),
+            "assets": [
+                {"name": asset["name"], "sha256": asset["sha256"]}
+                for asset in instrument.data["assets"]
+            ],
+            "audio": {"path": str(result / "audio.wav"), "format": "WAV float32", **observed},
+            "engine": {**engine, "python": platform.python_version()},
+            "elapsed_s": time.monotonic() - started,
+            "resources": {
+                "cpu_s": cpu_s,
+                "peak_rss": peak_rss,
+                "peak_rss_unit": "bytes" if platform.system() == "Darwin" else "KiB",
+            },
+            "device_mode": "offline render; no audio stream/device opened",
+        }
+        _write_manifest(staging / "manifest.json", manifest)
+        _fsync_directory(staging)
+        _fsync_directory(result.parent)
+        try:
+            os.rename(staging, result)
+        except OSError as exc:
+            if result.exists():
+                raise FileExistsError(
+                    f"immutable audition result already exists: {result}"
+                ) from exc
+            raise
+        return manifest
     finally:
-        temporary.unlink(missing_ok=True)
-    self_after = resource.getrusage(resource.RUSAGE_SELF)
-    children_after = resource.getrusage(resource.RUSAGE_CHILDREN)
-    cpu_s = (
-        self_after.ru_utime - self_before.ru_utime
-        + self_after.ru_stime - self_before.ru_stime
-        + children_after.ru_utime - children_before.ru_utime
-        + children_after.ru_stime - children_before.ru_stime
-    )
-    peak_rss = max(self_after.ru_maxrss, children_after.ru_maxrss)
-    manifest = {
-        "schema_version": 1,
-        "instrument_id": instrument.id,
-        "state_sha256": instrument.data["state_sha256"],
-        "fixture_sha256": instrument.data["audition_fixture_sha256"],
-        "audio_sha256": audio_hash,
-        "backend": instrument.data["backend"],
-        "assets": [
-            {"name": asset["name"], "sha256": asset["sha256"]}
-            for asset in instrument.data["assets"]
-        ],
-        "audio": {"path": str(output), "format": "WAV float32", **observed},
-        "engine": {**engine, "python": platform.python_version()},
-        "elapsed_s": time.monotonic() - started,
-        "resources": {
-            "cpu_s": cpu_s,
-            "peak_rss": peak_rss,
-            "peak_rss_unit": "bytes" if platform.system() == "Darwin" else "KiB",
-        },
-        "device_mode": "offline render; no audio stream/device opened",
-    }
-    atomic_json(output.with_suffix(output.suffix + ".json"), manifest)
-    return manifest
+        if staging.exists():
+            shutil.rmtree(staging)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("instrument_id")
-    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--result", type=Path, required=True)
     args = parser.parse_args()
-    print(json.dumps(render(args.instrument_id, args.output), indent=2, sort_keys=True))
+    print(json.dumps(render(args.instrument_id, args.result), allow_nan=False, indent=2, sort_keys=True))
 
 
 if __name__ == "__main__":

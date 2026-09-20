@@ -46,17 +46,23 @@ qualification phrase.
 
 `tools/qualification/catalogue_audition.py` validates declared ranges and
 mappings, builds the reviewed stock-UGen drum/bass SynthDefs or the complete
-Dexed MIDI schedule, renders a 32-bit float WAV atomically, and publishes a
-content-addressed measurement manifest. Example studio-host commands are:
+Dexed MIDI schedule, and stages a 32-bit float WAV plus content-addressed
+measurement manifest in one result directory. It publishes that immutable
+directory with one atomic rename and refuses to overwrite an existing result.
+The exact `scsynth` executable that passes the bounded version/build probe is
+also passed to Supriya for rendering. Example studio-host commands are:
 
 ```sh
 PYTHONPATH=src:. .venv-sc-qualification/bin/python \
   tools/qualification/catalogue_audition.py studio.drums.sc-basic-v1 \
-  --output /tmp/studio-drums.wav
+  --result /tmp/studio-drums
 PYTHONPATH=src:. .venv-pedalboard-qualification/bin/python \
   tools/qualification/catalogue_audition.py studio.keys.dexed-factory-v1 \
-  --output /tmp/studio-keys.wav
+  --result /tmp/studio-keys
 ```
+
+Each result contains `audio.wav` and `manifest.json`. Use a new result path for
+every repeat run so restart evidence cannot replace an earlier observation.
 
 ## Orb verification
 

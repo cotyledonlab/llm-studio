@@ -105,7 +105,7 @@
         "keyswitches": {}
       },
       "audition_fixture": "keys.json",
-      "audition_fixture_sha256": "148864b2067b862b452154299395f2790df0eacbea6d93e751c95482eacd9b4c",
+      "audition_fixture_sha256": "0f011f0634bfe811c86cec629e3c0561e3cd489aa2659fa01bf683aa71f21d5e",
       "qualification": {
         "status": "candidate",
         "evidence": "docs/qualification/pedalboard-rendering.md qualifies the engine/factory-state baseline, not this musical catalogue entry"
