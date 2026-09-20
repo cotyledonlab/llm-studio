@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import os
 import signal
+import subprocess
+import sys
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -27,6 +29,13 @@ def _sleeping_worker(job: RenderJob, output: Path) -> None:
 
 def _hanging_worker(job: RenderJob, output: Path) -> None:
     signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    child_code = (
+        "import pathlib,signal,time;"
+        "signal.signal(signal.SIGTERM, signal.SIG_IGN);"
+        "time.sleep(0.8);"
+        f"pathlib.Path({job.payload['child_late_path']!r}).write_text('escaped')"
+    )
+    subprocess.Popen([sys.executable, "-c", child_code])
     Path(job.payload["started_path"]).write_text(str(os.getpid()))
     while True:
         time.sleep(0.1)
@@ -57,7 +66,7 @@ def _job(tmp_path: Path, job_id: str, *, deadline_in_s: float = 5.0, **payload) 
         preroll_s=0.25,
         tail_s=0.5,
         deterministic_seed=42,
-        limits=ResourceLimits(cpu_seconds=10, memory_bytes=256 * 1024 * 1024),
+        limits=ResourceLimits(cpu_seconds=10, memory_bytes=8 * 1024 * 1024 * 1024),
         deadline_at=datetime.now(timezone.utc) + timedelta(seconds=deadline_in_s),
         result_path=tmp_path / job_id,
         payload=payload,
@@ -83,6 +92,11 @@ def test_success_runs_out_of_process_and_only_then_publishes(tmp_path: Path) -> 
     assert result.started_at is not None
     assert result.finished_at is not None
     assert result.error is None
+    assert result.limit_observations["cpu"] == "kernel-enforced"
+    assert result.limit_observations["memory"] in {
+        "kernel-enforced-address-space",
+        "kernel-advisory-resident-set",
+    } or result.limit_observations["memory"].startswith("not-enforced-by-host:")
     worker = json.loads((job.result_path / "worker.json").read_text())
     assert worker == {"job_id": job.job_id, "pid": result.worker_pid}
     assert worker["pid"] != os.getpid()
@@ -122,12 +136,14 @@ def test_absolute_deadline_terminates_hung_process_group_without_publication(
     tmp_path: Path,
 ) -> None:
     started = tmp_path / "hung.started"
+    child_late = tmp_path / "child-escaped"
     with RenderService(cancel_grace_s=0.1) as service:
         job = _job(
             tmp_path,
             "hung",
             deadline_in_s=0.35,
             started_path=str(started),
+            child_late_path=str(child_late),
         )
         service.submit(job, _hanging_worker)
         _wait_for(started)
@@ -139,6 +155,8 @@ def test_absolute_deadline_terminates_hung_process_group_without_publication(
     assert result.finished_at is not None
     assert "deadline" in (result.error or "")
     assert not job.result_path.exists()
+    time.sleep(0.9)
+    assert not child_late.exists()
 
 
 def test_cancellation_is_acknowledged_quickly_and_late_success_cannot_publish(

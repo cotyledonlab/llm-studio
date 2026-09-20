@@ -19,6 +19,7 @@ import time
 from pathlib import Path
 
 from llm_studio.catalogue import Catalogue, Instrument, plain
+from llm_studio.render_jobs import RenderJob
 
 
 def digest(data: bytes) -> str:
@@ -344,11 +345,21 @@ def render_pedalboard(instrument: Instrument, output: Path) -> tuple[dict, dict]
     return measurements(audio, fixture["sample_rate"], fixture["start_s"], fixture["start_s"] + fixture["duration_s"]), engine
 
 
-def render(instrument_id: str, result: Path) -> dict:
+def render(
+    instrument_id: str,
+    result: Path,
+    *,
+    published_result: Path | None = None,
+) -> dict:
     catalogue = Catalogue.packaged()
     instrument = catalogue.check_dependencies(instrument_id)
     validate_performance(instrument)
     result = result.expanduser().resolve()
+    logical_result = (
+        result
+        if published_result is None
+        else published_result.expanduser().resolve()
+    )
     result.parent.mkdir(parents=True, exist_ok=True)
     if result.exists():
         raise FileExistsError(f"immutable audition result already exists: {result}")
@@ -386,7 +397,11 @@ def render(instrument_id: str, result: Path) -> dict:
                 {"name": asset["name"], "sha256": asset["sha256"]}
                 for asset in instrument.data["assets"]
             ],
-            "audio": {"path": str(result / "audio.wav"), "format": "WAV float32", **observed},
+            "audio": {
+                "path": str(logical_result / "audio.wav"),
+                "format": "WAV float32",
+                **observed,
+            },
             "engine": {**engine, "python": platform.python_version()},
             "elapsed_s": time.monotonic() - started,
             "resources": {
@@ -412,6 +427,19 @@ def render(instrument_id: str, result: Path) -> dict:
     finally:
         if not published and staging.exists():
             shutil.rmtree(staging)
+
+
+def render_job(job: RenderJob, output: Path) -> None:
+    """Render a catalogue audition for parent-owned job publication."""
+
+    instrument_id = job.payload.get("instrument_id")
+    if not isinstance(instrument_id, str) or not instrument_id:
+        raise ValueError("catalogue render job payload requires instrument_id")
+    render(
+        instrument_id,
+        output,
+        published_result=job.result_path,
+    )
 
 
 def main() -> None:

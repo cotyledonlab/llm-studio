@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import struct
 from pathlib import Path
 
@@ -146,6 +147,27 @@ def test_result_directory_is_published_as_one_immutable_unit(tmp_path, monkeypat
     with pytest.raises(FileExistsError, match="immutable audition result"):
         audition.render(instrument.id, result)
     assert (result / "audio.wav").read_bytes() == b"mock float WAV"
+
+
+def test_worker_staging_manifest_names_parent_owned_publication_path(
+    tmp_path, monkeypatch
+) -> None:
+    instrument = mock_instrument()
+    monkeypatch.setattr(audition.Catalogue, "packaged", lambda: MockCatalogue(instrument))
+    monkeypatch.setattr(audition, "render_supercollider", successful_mock_render)
+    worker_output = tmp_path / "private-worker-output"
+    published_result = tmp_path / "audition-result"
+
+    manifest = audition.render(
+        instrument.id,
+        worker_output,
+        published_result=published_result,
+    )
+
+    assert worker_output.is_dir()
+    assert not published_result.exists()
+    assert manifest["audio"]["path"] == str(published_result / "audio.wav")
+    assert json.loads((worker_output / "manifest.json").read_text()) == manifest
 
 
 def test_concurrent_publisher_cannot_replace_winning_result(tmp_path, monkeypatch) -> None:
