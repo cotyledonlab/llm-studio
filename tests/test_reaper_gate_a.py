@@ -6,7 +6,9 @@ import sys
 import tempfile
 import wave
 
-from tools.qualification.reaper_export_stems import read_pcm, tone_magnitude
+from tools.qualification.reaper_export_stems import (
+    expected_project_duration, read_pcm, tone_magnitude,
+)
 from tools.qualification.reaper_take_replacement import tone, wait_for_active_copy
 
 
@@ -51,6 +53,27 @@ def test_pcm_reader_and_frequency_measurement(tmp_path):
     else:
         raise AssertionError('mono source was accepted as a stereo export')
     assert callable(tone_magnitude)
+
+
+def test_a4_render_bound_comes_from_latest_project_item(tmp_path):
+    project = tmp_path / 'session.RPP'
+    project.write_text('''<REAPER_PROJECT 0.1
+  RENDER_RANGE 1 0 0 0 1000
+  <TRACK
+    <ITEM
+      POSITION 0
+      LENGTH 5
+      <SOURCE WAVE
+      >
+    >
+    <ITEM
+      POSITION 1.25
+      LENGTH 3.75
+    >
+  >
+>
+''')
+    assert expected_project_duration(project) == 5.0
 
 
 def test_reopen_waits_for_independent_active_project_observation(tmp_path):

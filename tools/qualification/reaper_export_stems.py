@@ -17,6 +17,29 @@ import wave
 BASE = Path('/private/tmp/llm-studio-reaper')
 REAPER = Path('/Applications/REAPER.app/Contents/MacOS/REAPER')
 TRACK = re.compile(r'(?ms)^  <TRACK [^\n]*\n.*?^  >$')
+ITEM = re.compile(r'(?ms)^    <ITEM\n(.*?)^    >$')
+
+
+def expected_project_duration(source: Path) -> float:
+    """Return the A4 fixture's full-project, zero-extra-tail render bound."""
+    text = source.read_text()
+    render_range = re.search(r'(?m)^  RENDER_RANGE (\d+)(?:\s|$)', text)
+    if not render_range or render_range.group(1) != '1':
+        raise ValueError('A4 render must use the full-project range')
+    items = ITEM.findall(text)
+    if not items:
+        raise ValueError('A4 project has no media items to establish its render bound')
+    ends = []
+    for block in items:
+        position = re.search(r'(?m)^      POSITION ([^\s]+)$', block)
+        length = re.search(r'(?m)^      LENGTH ([^\s]+)$', block)
+        if not position or not length:
+            raise ValueError('A4 media item is missing position or length')
+        start, duration = float(position.group(1)), float(length.group(1))
+        if not math.isfinite(start) or not math.isfinite(duration) or duration <= 0:
+            raise ValueError('A4 media item has invalid position or length')
+        ends.append(start + duration)
+    return max(ends)
 
 
 def read_pcm(path: Path) -> tuple[int, int, list[tuple[int, int]]]:
@@ -121,10 +144,17 @@ def main() -> None:
         rendered[part] = render(project, cfgfile, wav)
     mix_rate, mix_width, mix_frames = read_pcm(mix)
     audio = {part: read_pcm(root / f'{part.lower()}.wav') for part in rendered}
+    expected_duration = expected_project_duration(source)
+    expected_frames = round(expected_duration * mix_rate)
+    expected_bounds = (len(mix_frames) == expected_frames and all(
+        len(frames) == expected_frames for _, _, frames in audio.values()))
     aligned = all(rate == mix_rate and width == mix_width and len(frames) == len(mix_frames)
                   for rate, width, frames in audio.values())
-    if not aligned:
-        raise RuntimeError('part exports do not align with stereo mix')
+    if not aligned or not expected_bounds:
+        raise RuntimeError(
+            f'exports do not match project bounds: expected {expected_frames} frames '
+            f'({expected_duration:g}s), mix has {len(mix_frames)}, '
+            f'stems have {[len(frames) for _, _, frames in audio.values()]}')
     sums = [tuple(sum(audio[part][2][i][channel] for part in rendered)
                   for channel in (0, 1)) for i in range(len(mix_frames))]
     errors = [mix_frames[i][channel] - sums[i][channel]
@@ -141,12 +171,16 @@ def main() -> None:
     bass_right = window_rms(bass, mix_rate, 2.4, 2.6, 1)
     drums_440 = tone_magnitude(drums, mix_rate, 440)
     drums_330 = tone_magnitude(drums, mix_rate, 330)
-    result = {'ok': aligned and error_ratio < 1e-5 and keys_mid < keys_early * .05
+    result = {'ok': aligned and expected_bounds and error_ratio < 1e-5 and keys_mid < keys_early * .05
               and keys_late > keys_early * .2 and bass_left > bass_right * 1.05
               and drums_440 > drums_330 * 100,
               'source': str(source), 'mix': str(mix), 'root': str(root),
               'sample_rate': mix_rate, 'sample_width_bytes': mix_width,
               'frames': len(mix_frames), 'duration_sec': len(mix_frames) / mix_rate,
+              'expected_project_duration_sec': expected_duration,
+              'expected_extra_tail_sec': 0.0,
+              'tail_bound': 'A4 source items end at the full-project render bound; no extra tail is configured',
+              'expected_frames': expected_frames, 'expected_bounds': expected_bounds,
               'aligned': aligned, 'summed_stem_error_rms_ratio': error_ratio,
               'max_summed_stem_error_lsb': max(abs(value) for value in errors),
               'keys_rms': {'early': keys_early, 'mid': keys_mid, 'late': keys_late},
