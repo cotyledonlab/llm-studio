@@ -50,7 +50,7 @@
       "resources": {"cpu_s_estimate": 0.511, "peak_rss_bytes_estimate": 74694656},
       "audition_fixture": "drums.json",
       "audition_fixture_sha256": "3a04e6cc98bf76de34c63dc14f9fcd56f588603ec0522470d6f5e7928356cf5c",
-      "qualification": {"status": "candidate", "evidence": null}
+      "qualification": {"status": "qualified", "evidence": "docs/qualification/instrument-catalogue.md#producer-acceptance"}
     },
     {
       "id": "studio.bass.sc-pulse-v1",
@@ -95,7 +95,7 @@
       "resources": {"cpu_s_estimate": 0.496, "peak_rss_bytes_estimate": 74760192},
       "audition_fixture": "bass.json",
       "audition_fixture_sha256": "36f7eaa97c55e02a479ff35063066aa847d8f3746a33c670cfa37878bdcbd2cd",
-      "qualification": {"status": "candidate", "evidence": null}
+      "qualification": {"status": "qualified", "evidence": "docs/qualification/instrument-catalogue.md#producer-acceptance"}
     },
     {
       "id": "studio.keys.dexed-factory-v1",
@@ -146,10 +146,7 @@
       "resources": {"cpu_s_estimate": 0.530, "peak_rss_bytes_estimate": 80101376},
       "audition_fixture": "keys.json",
       "audition_fixture_sha256": "0f011f0634bfe811c86cec629e3c0561e3cd489aa2659fa01bf683aa71f21d5e",
-      "qualification": {
-        "status": "candidate",
-        "evidence": "docs/qualification/pedalboard-rendering.md qualifies the engine/factory-state baseline, not this musical catalogue entry"
-      }
+      "qualification": {"status": "qualified", "evidence": "docs/qualification/instrument-catalogue.md#producer-acceptance"}
     }
   ]
 }
