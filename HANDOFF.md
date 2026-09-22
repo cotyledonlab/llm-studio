@@ -1,4 +1,66 @@
-# New-agent handoff
+# Current handoff — issue #10 acceptance complete, Gate A next
+
+Updated: 2026-09-22. Implementation branch: `feat/reaper-automation-handoff`.
+PR: [#33](https://github.com/cotyledonlab/llm-studio/pull/33).
+Issue #10 has a real producer-edit conflict observation. Check GitHub for the
+current PR/issue state before resuming; issue #11 is the next Gate A slice.
+
+Read [automation qualification](docs/qualification/reaper-automation.md) and
+[adapter contract](adapters/reaper/README.md) before further live work.
+Bounded native volume observation/apply and checked envelope-only recovery are
+implemented. Before the producer-edit watcher correction, the pinned-controller
+studio suite passed 72 tests with 8 optional integration skips. Native
+copy-based qualification passed manual-lane copying, static-mode refusal,
+programmatic intervening-edit conflict, exact recovery, refusal after unrelated
+work, and patch save/reopen. Native global Undo restored pre-setup state in the
+first probe; recovery now uses a checked compensating envelope transaction.
+
+## Current live state
+
+Only the issue #10 owner performed live writes; no GUI automation was used. The
+disposable profile is running at
+`/private/tmp/llm-studio-reaper/a3-probe/profile/reaper.ini`. John dismissed the
+startup dialog. Always use this exact absolute `-cfgfile` when forwarding native
+scripts; never automate the DAW GUI or edit active profile configuration.
+
+The disposable source is `a3-probe/session.RPP`, with one `StudioAutomation`
+track. John's latest manual edit changed the two-second point's saved linear
+gain from 0.0419846 to 1.95447444. The one- and three-second points retain
+linear gains 0.25118864 and 0.00120226. Re-observe the active tab before any
+further live operation.
+Envelope GUID: `{4C4BF0CF-8580-B941-98FE-60269BE60A4B}`. Preserve his edits.
+Fresh evidence is under `automation-dxk76v2h/` and
+`automation-timebase-lvgmrmj3/`. Installed transport patch/recovery, six
+timebase cases, and exported-audio scope all pass on REAPER 7.80. The earlier
+runner restored the original tab and preserved the source RPP bytes at that
+time. The subsequent human edit intentionally changed the source RPP.
+The older #9 profile and producer gain/pan adjustments were not opened/changed.
+
+## Human conflict result and next work
+
+The first armed run was a false positive: selection changed but the point's
+time and gain did not. The corrected watcher required an actual time/raw gain
+change and captured John's edit. It detected the change at age 10.709244 s
+within the 30 s observation bound. The native handler returned `CONFLICT`,
+applied no proposal, preserved the edited envelope chunk exactly and saved the
+disposable source. Evidence:
+`/private/tmp/llm-studio-reaper/human-conflict-20260922-retry.txt` (temporary).
+The first failed attempt is `human-conflict-20260922.txt` and must not be cited
+as a pass. A later review hardened the watcher with a ten-minute absolute
+deadline, duplicate-owner exclusion, termination cleanup and an on-disk chunk
+check after save. The passing run predates that hardening, but its saved RPP
+was independently inspected and contained John's changed two-second point.
+
+After PR #33 is merged, resume issue #11's take-replacement and export
+investigation. The earlier
+#9 `audio.render_project` timeout remains unresolved; the successful explicit
+profile exports in #10 do not explain that failure. Do not repeat the same
+timeout unchanged. The installed transport and native handler paths have
+separate evidence in the qualification report.
+
+---
+
+# Prior handoff — issue #9 complete (historical)
 
 Updated: 2026-09-08. Repository: `cotyledonlab/llm-studio`.
 Resume branch: `main`. Implementation branch: `feat/reaper-studio-bootstrap`.

@@ -25,7 +25,8 @@ def test_packaged_catalogue_exposes_exact_three_roles_and_fixtures() -> None:
     assert {instrument.data["role"] for instrument in instruments} == {"drums", "bass", "keys"}
     assert len(instruments) == 3
     assert all(instrument.fixture["events"] for instrument in instruments)
-    assert all(instrument.qualification == "candidate" for instrument in instruments)
+    assert all(instrument.qualification == "qualified" for instrument in instruments)
+    assert all(instrument.data["qualification"]["evidence"] for instrument in instruments)
     assert all(instrument.data["parameters"] for instrument in instruments)
     assert all(
         instrument.data["render"]["sample_rates"] == (48000,)

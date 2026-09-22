@@ -1,7 +1,8 @@
 # Minimal instrument catalogue qualification (issue #14)
 
-Date: 2026-09-20. Status: **implementation and repeated native rendering
-complete; producer audition remains pending**.
+Updated: 2026-09-22. Status: **all three pinned initial sounds qualified after
+native rendering, restart checks and producer audition**. Gate B still depends
+on issue #15's render-job cancellation and alignment qualification.
 
 ## Catalogue boundary
 
@@ -29,9 +30,9 @@ Python distribution version, plugin location, and plugin SHA-256 before use.
 An unknown ID, missing dependency, version mismatch, or hash mismatch is a hard,
 actionable error; the loader never chooses a substitute sound.
 
-All three entries deliberately remain `candidate`. Native load, state restore,
-render, and process-restart evidence now exists, but only producer listening can
-promote an entry to `qualified`.
+All three entries are `qualified` for the pinned initial palette. Native load,
+state restore, render and process-restart evidence is recorded below; the
+producer listening decision is recorded under [Producer acceptance](#producer-acceptance).
 
 ## Deterministic audition fixtures
 
@@ -94,16 +95,22 @@ diagnostics, and plugin binary hash rejection. The native dependency check was
 also exercised and returned the expected exact `scsynth 3.14.1` installation
 error. No render or listening claim is made from this environment.
 
-## Remaining producer handoff
+## Producer acceptance
 
-On the pinned studio host:
+On 2026-09-22, John listened to the three acceptance-bundle WAVs and explicitly
+responded "Accept drums", "Accept bass" and "Accept keys". The decision is
+[recorded on issue #14](https://github.com/cotyledonlab/llm-studio/issues/14#issuecomment-5783922923).
+The local bundle under `/private/tmp/llm-studio-issue-14-producer-acceptance/`
+retains the exact WAVs, manifests and SHA-256 checksums used for that decision.
+All three catalogue entries now reference this evidence and are marked
+`qualified`. This decision applies to these exact pinned sounds and fixtures.
 
-1. Confirm drum-map events, overlapping bass/keys notes, and CC64 behavior;
-   reject clipping, missing events, range errors, and undeclared substitutions.
-2. Have the producer audition the three renders. Only then update each entry's
-   qualification status and evidence reference.
+The native renderer checks found no clipping, missing events, range mistakes or
+undeclared substitutions. The keys fixture exercised the declared CC64 mapping;
+the bass and keys fixtures exercised overlapping notes. Issue #15 remains the
+separate Gate B work for worker isolation, cancellation, alignment and resource
+admission.
 
 Audio, plugin binaries, generated native state other than the governed factory
-patch, credentials, and restricted assets stay outside git. Until this handoff
-passes, issue #14 and Gate B remain open and callers must present these sounds
-as candidates rather than qualified instruments.
+patch, credentials, and restricted assets stay outside git. Catalogue
+qualification alone does not claim a full Gate B pass.

@@ -1,12 +1,14 @@
-# REAPER integration slice — issue #9
+# REAPER integration qualification
 
 This is a private, macOS qualification slice, restricted to disposable projects.
-It does not authorize production mix proposals or implement envelopes (#10).
+It does not authorize production mix proposals. Issue #10's bounded envelope
+qualification is complete; Gate A still requires issue #11. See the contract
+and evidence below.
 
 The external controller is pinned in `controller-pin.json`. Its file-drop
 transport, OSC resources and renderer remain upstream. `controller-studio-hook.patch`
 is an exact patch against that commit: it loads `studio_handler.lua` into the
-existing daemon, routes only four `studio.*` operations and observes session
+existing daemon, routes bounded `studio.*` operations and observes session
 changes during daemon ticks. No generic bridge code is copied into this repo.
 
 The controller's declared MIT licence has no accompanying copyright notice at
@@ -65,6 +67,9 @@ package. The studio adapter has these operations:
 | `read_track(session, guid)` | `studio.get_track_state` | Gain, pan, FX names/parameter counts |
 | `set_mixer(session, guid, gain_db=..., pan=...)` | `studio.set_mixer` | Actual gain/pan after the write |
 | `import_stem(session, guid, wav)` | `studio.import_stem` | Native item GUID, source path, duration and position |
+| `read_volume_envelope(session, guid, start_sec=..., end_sec=...)` | `studio.read_volume_envelope` | Stable envelope GUID, timebase, points and expiring fingerprint |
+| `patch_volume_envelope(session, guid, baseline, points)` | `studio.patch_volume_envelope` | Bounded native patch, exact readback and recovery receipt |
+| `undo_volume_patch(session, guid, patch)` | `studio.undo_volume_patch` | Checked envelope-only compensating recovery or refusal |
 
 `silent=True` is explicit zero gain; `gain_db=None` leaves gain unchanged.
 Only WAV import is qualified. Python stages a content-addressed session asset;
@@ -118,3 +123,47 @@ Render `baseline.RPP` and `processed.RPP` with the upstream controller's
 `render --wav` before audio comparison. The native handler test does not deploy
 or restart the producer's daemon and does not replace end-to-end installed
 bridge qualification. See the [observed report](../../docs/qualification/reaper-environment.md).
+
+## Volume envelope qualification — issue #10
+
+`read_volume_envelope(session, guid, start_sec=..., end_sec=...)` returns a native
+volume-envelope GUID, mode, active/armed state, project/track timebase settings,
+raw and linear values, dB/silence, shape/tension/selection and bounded points.
+Coordinates are **project seconds** and this API does not offer beat-domain
+editing. Readback also reports each point's project quarter-note position plus
+the project, track and effective timebase. `attachment_domain` is
+`project_time` for effective mode 0 and `project_beats` for modes 1/2. Native
+qualification proves that time-attached points retain seconds while
+beat-attached points retain quarter-note position across a 120→60 BPM change,
+including project inheritance and track overrides. Fader scaling is converted
+by REAPER's own scaling APIs.
+
+`patch_volume_envelope(session, guid, baseline, points)` takes points with
+`time_sec` and `gain_db` (or `silent=True`). It replaces the inclusive range with
+linear segments. Endpoints must already exist uniquely and retain their gains;
+the right endpoint retains its outgoing shape/tension. Outside points and
+non-point envelope metadata are checked exactly. Curved-segment subdivision,
+automation items, duplicate point times, ranges over 600 seconds, more than
+2,048 total points and chunks over 256 KiB are refused. Existing interpolation
+is observed; no claim is made that linear interpolation in native fader space
+is linear in dB.
+
+The opaque fingerprint references an exact server-side envelope snapshot,
+settings and project state-change count. It expires after 30 seconds and is
+single-use on apply; only the latest 32 observations are retained. Comparison
+and application run synchronously in one bridge callback without yielding.
+Any observed project change, even unrelated work, causes conservative conflict.
+A new observation requires a new reviewed proposal, not blind retry. Session
+switch/restart invalidates receipts under the previously documented token limits.
+Writes require stopped transport, an active volume lane, Trim/Read or Read and
+no global automation override. Static mixer writes refuse an affected control
+with an active lane, points or automation items, and all non-Trim/Read modes.
+
+`undo_volume_patch(session, guid, patch)` is a **compensating envelope restore**,
+not global Undo. It checks that no project revision or target state changed,
+then restores only the original envelope in a named undo transaction. It refuses
+after unrelated edits, restart or session change. The latest patch alone retains
+a recovery receipt. Each applied proposal also has a uniquely named native undo
+block, but native undo snapshots can predate changes made by other scripts; the
+adapter never invokes global Undo. Transport failure after a mutation has an
+uncertain outcome: inspect fresh state and do not retry blindly.
