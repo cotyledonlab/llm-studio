@@ -6,6 +6,9 @@ local prior = prior_file:read('*a')
 prior_file:close()
 local source_revision_before = tonumber(prior:match('source_revision_before=(%d+)'))
 local source_dirty_before = tonumber(prior:match('source_dirty_before=(%d+)'))
+local function prior_value(key)
+  return prior:match(key .. '=([^\n]+)')
+end
 local report = assert(io.open(c.root .. '/native-evidence.txt', 'a'))
 local function record(key, value)
   report:write(key .. '=' .. tostring(value) .. '\n')
@@ -28,13 +31,29 @@ local function run()
     'reopened_copy_active_in_exact_profile')
   check(original ~= nil, 'original_tab_still_open')
   check(reaper.CountTracks(0) == 3, 'three_parts_survive_reopen')
-  local keys, bass, drums = reaper.GetTrack(0, 0), reaper.GetTrack(0, 1), reaper.GetTrack(0, 2)
-  local function name(track)
-    local _, value = reaper.GetSetMediaTrackInfo_String(track, 'P_NAME', '', false)
-    return value
+  local parts = {
+    {name='Keys', key='keys', source=c.keys},
+    {name='Bass', key='bass', source=c.bass},
+    {name='Drums', key='drums', source=c.drums_b},
+  }
+  for _, part in ipairs(parts) do
+    part.track_guid = prior_value(part.key .. '_track_guid')
+    part.item_guid = prior_value(part.key .. '_item_guid')
+    part.take_guid = prior_value(part.key .. '_take_guid')
+    check(part.track_guid and part.item_guid and part.take_guid,
+      'presave_' .. part.key .. '_bindings_recorded')
+    for index = 0, reaper.CountTracks(0) - 1 do
+      local candidate = reaper.GetTrack(0, index)
+      if reaper.GetTrackGUID(candidate) == part.track_guid then
+        part.track = candidate
+        break
+      end
+    end
+    check(part.track ~= nil, 'presave_' .. part.key .. '_track_guid_rebound')
+    local _, name = reaper.GetSetMediaTrackInfo_String(part.track, 'P_NAME', '', false)
+    check(name == part.name, 'logical_' .. part.key .. '_name_preserved')
   end
-  check(name(keys) == 'Keys' and name(bass) == 'Bass' and name(drums) == 'Drums',
-    'logical_parts_survive_reopen')
+  local keys, bass, drums = parts[1].track, parts[2].track, parts[3].track
   local _, source_chunk = reaper.GetEnvelopeStateChunk(
     reaper.GetTrackEnvelopeByChunkName(reaper.GetTrack(original, 0), '<VOLENV2'), '', false)
   local _, reopened_chunk = reaper.GetEnvelopeStateChunk(
@@ -46,20 +65,24 @@ local function run()
     'bass_mix_survives_reopen')
   local _, fx_name = reaper.TrackFX_GetFXName(bass, 0, '')
   check(fx_name == 'VST: ReaEQ (Cockos)', 'bass_fx_survives_reopen')
-  local expected = {c.keys, c.bass, c.drums_b}
-  local items = {}
-  for index, track in ipairs({keys, bass, drums}) do
-    check(reaper.CountTrackMediaItems(track) == 1, 'one_item_on_part_' .. index)
-    local item = reaper.GetTrackMediaItem(track, 0)
+  for _, part in ipairs(parts) do
+    check(reaper.CountTrackMediaItems(part.track) == 1,
+      'one_item_on_' .. part.key)
+    local item
+    for index = 0, reaper.CountTrackMediaItems(part.track) - 1 do
+      local candidate = reaper.GetTrackMediaItem(part.track, index)
+      local _, guid = reaper.GetSetMediaItemInfo_String(candidate, 'GUID', '', false)
+      if guid == part.item_guid then item = candidate; break end
+    end
+    check(item ~= nil, 'presave_' .. part.key .. '_item_guid_rebound')
     local take = reaper.GetActiveTake(item)
+    local _, take_guid = reaper.GetSetMediaItemTakeInfo_String(take, 'GUID', '', false)
+    check(take_guid == part.take_guid, 'presave_' .. part.key .. '_take_guid_rebound')
     local source = reaper.GetMediaItemTake_Source(take)
-    local _, item_guid = reaper.GetSetMediaItemInfo_String(item, 'GUID', '', false)
-    check(reaper.GetMediaSourceFileName(source, '') == expected[index]
+    check(reaper.GetMediaSourceFileName(source, '') == part.source
       and reaper.GetMediaItemInfo_Value(item, 'D_POSITION') == 0
-      and reaper.GetMediaItemInfo_Value(item, 'D_LENGTH') == 5
-      and type(item_guid) == 'string' and item_guid ~= '',
-      'durable_aligned_source_' .. index)
-    items[index] = item_guid
+      and reaper.GetMediaItemInfo_Value(item, 'D_LENGTH') == 5,
+      'durable_aligned_' .. part.key .. '_source')
   end
   local handler = dofile(c.handler)
   local session
@@ -67,14 +90,18 @@ local function run()
     function(_, value) session = value.session end,
     function(_, code, detail) error(code .. ':' .. detail) end)
   check(session ~= nil and session.id == active_path, 'reopened_session_identity')
-  local observed
-  handler.handle('a4-rebind', {op='studio.read_stem', params={
-    session_id=session.id, session_token=session.token,
-    track_guid=reaper.GetTrackGUID(drums), item_guid=items[3]}},
-    function(_, value) observed = value end,
-    function(_, code, detail) error(code .. ':' .. detail) end)
-  check(observed and observed.source_path == c.drums_b
-    and observed.item_guid == items[3], 'drum_binding_reconciled_after_reopen')
+  for _, part in ipairs(parts) do
+    local observed
+    handler.handle('a4-rebind-' .. part.key, {op='studio.read_stem', params={
+      session_id=session.id, session_token=session.token,
+      track_guid=part.track_guid, item_guid=part.item_guid}},
+      function(_, value) observed = value end,
+      function(_, code, detail) error(code .. ':' .. detail) end)
+    check(observed and observed.source_path == part.source
+      and observed.item_guid == part.item_guid
+      and observed.take_guid == part.take_guid,
+      part.key .. '_binding_reconciled_after_reopen')
+  end
   record('native_qualification', 'pass')
 end
 local ok, err = xpcall(run, debug.traceback)

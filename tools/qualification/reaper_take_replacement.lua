@@ -75,6 +75,12 @@ local function run()
   local _, bass_before = reaper.GetTrackStateChunk(bass, '', false)
   local params = {session_id=session.id, session_token=session.token,
     track_guid=reaper.GetTrackGUID(drums), item_guid=drum_item.item_guid}
+  local keys_observed = call('read_stem', {session_id=session.id,
+    session_token=session.token, track_guid=reaper.GetTrackGUID(keys),
+    item_guid=keys_item.item_guid})
+  local bass_observed = call('read_stem', {session_id=session.id,
+    session_token=session.token, track_guid=reaper.GetTrackGUID(bass),
+    item_guid=bass_item.item_guid})
   local before = call('read_stem', params)
   params.expected, params.stem_path = before, c.drums_b
   local replaced = call('replace_stem', params)
@@ -94,10 +100,17 @@ local function run()
   record('bass_pan', reaper.GetMediaTrackInfo_Value(bass, 'D_PAN'))
   local _, bass_fx_name = reaper.TrackFX_GetFXName(bass, fx_index, '')
   record('bass_fx', bass_fx_name)
+  for _, part in ipairs({{name='keys', track=keys, item=keys_observed},
+      {name='bass', track=bass, item=bass_observed},
+      {name='drums', track=drums, item=replaced.observed}}) do
+    record(part.name .. '_track_guid', reaper.GetTrackGUID(part.track))
+    record(part.name .. '_item_guid', part.item.item_guid)
+    record(part.name .. '_take_guid', part.item.take_guid)
+  end
   reaper.Main_SaveProjectEx(0, c.root .. '/session.RPP', 0)
   local _, saved_path = reaper.EnumProjects(-1, '')
   check(saved_path == c.root .. '/session.RPP', 'copy_saved')
-  record('native_stage1', 'pass')
+  record('pre_reopen_complete', 'pass')
   opening_copy = true
   -- REAPER ends a running ReaScript here. A second script verifies the reopened
   -- tab and restores the original; do not assume this call returns.

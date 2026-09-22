@@ -290,6 +290,7 @@ class ReaperStudioAdapter:
                 or result.get('item_guid') != item_guid
                 or not isinstance(result.get('take_guid'), str) or not result['take_guid']
                 or not isinstance(result.get('source_path'), str) or not Path(result['source_path']).is_absolute()
+                or result.get('source_type') not in ('WAVE', 'WAV')
                 or not _number(result.get('position_sec')) or result['position_sec'] < 0
                 or not _number(result.get('length_sec')) or result['length_sec'] <= 0
                 or type(result.get('channels')) is not int or result['channels'] not in (1, 2)
@@ -320,6 +321,7 @@ class ReaperStudioAdapter:
         observed = self._stem_observed(result.get('observed'), guid, item_guid)
         if (observed['take_guid'] != expected['take_guid']
                 or observed['source_path'] != str(destination)
+                or observed['source_type'] != expected['source_type']
                 or observed['position_sec'] != expected['position_sec']
                 or observed['length_sec'] != expected['length_sec']
                 or observed['channels'] != expected['channels']

@@ -7,6 +7,7 @@ import tempfile
 import wave
 
 from tools.qualification.reaper_export_stems import read_pcm, tone_magnitude
+from tools.qualification.reaper_take_replacement import tone, wait_for_active_copy
 
 
 def test_prepares_two_stage_native_runner_without_opening_reaper():
@@ -36,7 +37,6 @@ def test_prepares_two_stage_native_runner_without_opening_reaper():
 
 def test_pcm_reader_and_frequency_measurement(tmp_path):
     target = tmp_path / 'tone.wav'
-    from tools.qualification.reaper_take_replacement import tone
     tone(target, 440)
     with wave.open(str(target), 'rb') as source:
         assert source.getnframes() == 240000
@@ -49,3 +49,19 @@ def test_pcm_reader_and_frequency_measurement(tmp_path):
     else:
         raise AssertionError('mono source was accepted as a stereo export')
     assert callable(tone_magnitude)
+
+
+def test_reopen_waits_for_independent_active_project_observation(tmp_path):
+    expected = tmp_path / 'session.RPP'
+    paths = iter(['/source.RPP', str(expected)])
+    wait_for_active_copy(lambda: {'path': next(paths)}, expected,
+                         timeout=1, interval=0)
+
+    try:
+        wait_for_active_copy(lambda: {'path': '/source.RPP'}, expected,
+                             timeout=0, interval=0)
+    except TimeoutError as error:
+        assert str(expected) in str(error)
+        assert '/source.RPP' in str(error)
+    else:
+        raise AssertionError('stage two was allowed without active-copy observation')

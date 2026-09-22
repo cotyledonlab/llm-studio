@@ -1,4 +1,66 @@
-# Current handoff — issue #10 acceptance complete, Gate A next
+# Current handoff — issue #11 draft, live manual check pending
+
+Updated: 2026-09-22. Branch: `codex/issue-11-gate-a` at `e67b97a`.
+Draft PR: [#37](https://github.com/cotyledonlab/llm-studio/pull/37).
+Issue [#11](https://github.com/cotyledonlab/llm-studio/issues/11) remains open;
+Gate A is not accepted. Parallel issue #15 work is at draft PR #35 and must not
+mutate live REAPER. PR #33 is merged and issue #10 closed.
+
+Read [Gate A qualification](docs/qualification/reaper-gate-a.md) and the
+[adapter contract](adapters/reaper/README.md) before continuing. This branch
+implements same-length WAV replacement for a GUID-bound single-take item. The
+first direct native trial passed replacement and stale-request rejection, and
+the copy rendered. Independent review found the reopen harness did not compare
+pre-save track/item/take GUIDs to the reopened bindings; a corrected harness is
+in progress and needs a fresh native run. A later review fix now requires the
+old and new source types to be WAV. The live native trial predates that guard.
+The installed transport and manual Bass gain acceptance remain open. The
+45-second renderer timeout from #9 did not reproduce in one bounded no-profile
+retry and remains unexplained. Review PR #37 findings before merging.
+
+## Live REAPER ownership and producer state
+
+Only this task may mutate the DAW. REAPER was using the disposable profile
+`/private/tmp/llm-studio-reaper/a3-probe/profile/reaper.ini` at last inspection.
+John has since closed all but one tab. A read-only bridge snapshot identified
+the remaining tab as the generated one-track
+`automation-timebase-lvgmrmj3/project_time_inherited.RPP`, dirty in memory; it
+is not the A4 qualification copy. Leave it untouched. Previously the original
+`a3-probe/session.RPP` was dirty, and its **in-memory** two-second Keys
+envelope point differed from the last saved source RPP. The source RPP on disk
+was not changed by the test. Preserve any remaining producer state.
+
+John was asked to move the Bass fader in the selected three-track copy, but
+reported a dialog and that the project closed. A subsequent read-only native
+tab enumeration showed both tabs still open and the original active. No manual
+Bass edit has been observed or accepted; do not count the scripted -6 dB
+fixture gain. The dialog's cause remains unknown.
+
+The A4 copy and reports are under
+`/private/tmp/llm-studio-reaper/gate-a4-693qi2_4/`; the mix and part WAVs are
+under `gate-a4-export-rgwcznsd/` and `gate-a4-stems-yq1lv7j2/`. These are
+temporary and may expire. The first sandboxed REAPER launcher aborted during
+macOS application registration; it did not deliver the script and the old
+process survived. Elevated forwarding of the exact same wrapper succeeded.
+Opening the copy ended its running ReaScript; the second-stage readback script
+completed. Do not repeat either failure path unchanged.
+
+## Next bounded steps
+
+1. Finish PR #37 review findings and verify the GUID-based save/reopen harness,
+   WAV source-type guard, and stage-two dispatch synchronization.
+2. If the single remaining tab is suitable and John can interact with the
+   disposable A4 copy, capture his real Bass
+   gain move, then replace Drums again with a fresh observation, save/reopen and
+   verify exact gain/envelope/FX/media plus rendered audio. Preserve both tabs.
+3. Qualify the new handler through the pinned controller's installed file-drop
+   transport in a **separate disposable profile**, not by modifying the running
+   profile. Then write the complete Gate A capability matrix and go/no-go
+   decision. Do not close #11 or undraft PR #37 while these checks are open.
+
+---
+
+# Prior handoff — issue #10 acceptance complete (historical)
 
 Updated: 2026-09-22. Implementation branch: `feat/reaper-automation-handoff`.
 PR: [#33](https://github.com/cotyledonlab/llm-studio/pull/33).

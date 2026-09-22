@@ -122,7 +122,8 @@ def test_replace_stem_uses_exact_item_observation_and_checks_readback(session, t
     stem = tmp_path / 'new.wav'
     stem.write_bytes(b'new fixture WAV bytes')
     baseline = {'track_guid': '{a}', 'item_guid': '{item}', 'take_guid': '{take}',
-                'source_path': '/old.wav', 'position_sec': 0, 'length_sec': 2,
+                'source_path': '/old.wav', 'source_type': 'WAVE',
+                'position_sec': 0, 'length_sec': 2,
                 'channels': 1, 'sample_rate': 48000,
                 'state_change_count': 5}
     calls = []
@@ -155,3 +156,17 @@ def test_replace_stem_rejects_bad_observation_before_dispatch(session, tmp_path)
                                   disposable_roots=(tmp_path,))
     with pytest.raises((ValueError, ReaperAdapterError)):
         adapter.replace_stem(session, '{a}', {'item_guid': '{item}'}, stem)
+
+
+@pytest.mark.parametrize('source_type', ['MP3', 'FLAC', None])
+def test_replace_stem_rejects_non_wav_observation(session, tmp_path, source_type):
+    stem = tmp_path / 'new.wav'
+    stem.write_bytes(b'fixture')
+    observation = {'track_guid': '{a}', 'item_guid': '{item}', 'take_guid': '{take}',
+                   'source_path': '/old.wav', 'source_type': source_type,
+                   'position_sec': 0, 'length_sec': 2, 'channels': 1,
+                   'sample_rate': 48000, 'state_change_count': 5}
+    adapter = ReaperStudioAdapter(lambda *args: pytest.fail('unexpected dispatch'),
+                                  disposable_roots=(tmp_path,))
+    with pytest.raises(ReaperAdapterError, match='invalid observed stem item'):
+        adapter.replace_stem(session, '{a}', observation, stem)

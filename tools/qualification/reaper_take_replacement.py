@@ -17,6 +17,29 @@ BASE = Path('/private/tmp/llm-studio-reaper')
 REAPER = Path('/Applications/REAPER.app/Contents/MacOS/REAPER')
 
 
+def wait_for_active_copy(snapshot, expected: Path, *, timeout: float = 20,
+                         interval: float = 0.05) -> None:
+    """Wait for an independent REAPER snapshot before dispatching stage two."""
+    deadline = time.monotonic() + timeout
+    last_path = None
+    last_error = None
+    while True:
+        try:
+            session = snapshot()
+            last_path = session.get('path') if isinstance(session, dict) else None
+            last_error = None
+            if last_path == str(expected):
+                return
+        except Exception as error:
+            last_error = str(error)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError(
+                f'active-copy observation timed out: expected={expected}, '
+                f'observed={last_path}, last_error={last_error}')
+        time.sleep(min(interval, remaining))
+
+
 def tone(path: Path, frequency: int) -> None:
     with wave.open(str(path), 'wb') as output:
         output.setparams((1, 2, 48000, 0, 'NONE', 'not compressed'))
@@ -68,13 +91,30 @@ def main() -> None:
     deadline = time.monotonic() + 20
     while time.monotonic() < deadline:
         evidence = report.read_text() if report.exists() else ''
-        if 'source_tab_restored=' in evidence and 'native_stage1=pass' not in evidence:
+        if 'source_tab_restored=' in evidence and 'pre_reopen_complete=pass' not in evidence:
             raise RuntimeError(f'first native stage failed; inspect {report}')
-        if 'native_stage1=pass' in evidence:
+        if 'pre_reopen_complete=pass' in evidence:
             break
         time.sleep(.05)
     else:
         raise TimeoutError(f'first native stage unobserved; inspect {report} before retrying')
+
+    # The stage-one marker is written immediately before Main_openProject,
+    # which ends that ReaScript. Confirm the live tab switch independently
+    # through the installed bridge before asking REAPER to run stage two.
+    from reaper_connector.bridge import send
+
+    def snapshot() -> dict:
+        reply = send('studio.session_snapshot', {}, timeout=2,
+                     resource_path=cfgfile.parent)
+        if reply.get('ok') is not True or not isinstance(reply.get('result'), dict):
+            raise RuntimeError(f'incomplete session snapshot: {reply!r}')
+        session = reply['result'].get('session')
+        if not isinstance(session, dict):
+            raise RuntimeError(f'session identity missing from snapshot: {reply!r}')
+        return session
+
+    wait_for_active_copy(snapshot, root / 'session.RPP')
     subprocess.run([str(REAPER), '-cfgfile', str(cfgfile), '-nonewinst', '-noactivate',
                     str(reopen)], check=True, timeout=20)
     deadline = time.monotonic() + 20

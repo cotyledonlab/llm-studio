@@ -36,13 +36,14 @@ blindly retrying a failed write. Unit and injected native-host tests cover
 stale observations, format refusal and failed-readback recovery.
 
 On the real disposable copy, the native handler replaced the Drums 330 Hz
-source with a 440 Hz source without rebinding the item or take. Reusing the
-stale observation returned `CONFLICT`. Keys and Bass track chunks were
-byte-identical before/after replacement; John's Keys envelope chunk was also
-identical. Bass gain `0.50118723362727`, pan `-0.2`, and `VST: ReaEQ (Cockos)`
-survived save/reopen. All three items retained their absolute hash-addressed
-WAV paths, zero start, and five-second length. The reopened drum source and
-item GUID were read back via the handler. This Bass gain was set by the test
+source with a 440 Hz source. Reusing the stale observation returned `CONFLICT`.
+Keys and Bass track chunks were byte-identical before/after replacement;
+John's Keys envelope chunk was also identical. Bass gain `0.50118723362727`,
+pan `-0.2`, and `VST: ReaEQ (Cockos)` survived save/reopen. The first reopen
+readback checked track names and media paths, but did not compare every
+pre-save track/item/take GUID to its reopened binding. Independent review
+identified that gap; the corrected harness now records and compares those
+GUIDs and still needs a fresh native run. This Bass gain was set by the test
 script; it is **not** counted as a new human fader observation.
 
 Opening the saved project ended the running ReaScript before its subsequent
@@ -83,9 +84,10 @@ batch mode.
 
 1. John was asked to change Bass gain in the disposable three-track tab, but
    reported a dialog and that the project closed. No manual edit was observed
-   or counted. A read-only REAPER probe found the app still running, both tabs
-   still open, and the original tab active. Await the dialog description and
-   re-observe before any more live work; do not save or reopen the original.
+   or counted. A read-only REAPER probe found the app still running and both
+   tabs still open at that time. John has since closed all but one tab; the
+   remaining tab is a dirty generated automation-timebase project, not the A4
+   qualification copy. Preserve it as observed.
 2. After a verified manual Bass move, replace the Drums source again with a
    fresh observation, save/reopen, and independently verify the exact gain,
    Keys envelope, FX, media references and audible export.

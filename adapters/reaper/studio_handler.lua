@@ -77,6 +77,7 @@ local function find_stem(track, item_guid)
       local source = take and reaper.GetMediaItemTake_Source(take)
       if not source then return nil, 'active audio source missing' end
       local path = reaper.GetMediaSourceFileName(source, '')
+      local source_type = reaper.GetMediaSourceType(source, '')
       local source_length, quarter_notes = reaper.GetMediaSourceLength(source)
       local channels = reaper.GetMediaSourceNumChannels(source)
       local sample_rate = reaper.GetMediaSourceSampleRate(source)
@@ -86,6 +87,7 @@ local function find_stem(track, item_guid)
       local rate = reaper.GetMediaItemTakeInfo_Value(take, 'D_PLAYRATE')
       local got_take_guid, take_guid = reaper.GetSetMediaItemTakeInfo_String(take, 'GUID', '', false)
       if not got_take_guid or type(take_guid) ~= 'string' or take_guid == ''
+          or (source_type ~= 'WAVE' and source_type ~= 'WAV')
           or quarter_notes or not finite(source_length) or not finite(position)
           or not finite(length) or not finite(offset) or not finite(rate)
           or not finite(channels) or channels < 1 or channels > 2
@@ -95,6 +97,7 @@ local function find_stem(track, item_guid)
       end
       return {item=item, take=take, source=source, public={item_guid=guid,
         take_guid=take_guid, track_guid=reaper.GetTrackGUID(track), source_path=path,
+        source_type=source_type,
         position_sec=position, length_sec=length, channels=channels,
         sample_rate=sample_rate,
         state_change_count=reaper.GetProjectStateChangeCount(0)}}
@@ -317,6 +320,7 @@ local function stem_operation(op, p, track, id, token, op_id, done, fail)
       or p.expected.take_guid ~= before.public.take_guid
       or p.expected.track_guid ~= before.public.track_guid
       or p.expected.source_path ~= before.public.source_path
+      or p.expected.source_type ~= before.public.source_type
       or p.expected.position_sec ~= before.public.position_sec
       or p.expected.length_sec ~= before.public.length_sec
       or p.expected.channels ~= before.public.channels
@@ -333,9 +337,11 @@ local function stem_operation(op, p, track, id, token, op_id, done, fail)
   local source = reaper.PCM_Source_CreateFromFile(p.stem_path)
   if not source then return fail('IMPORT_FAILED', 'cannot load replacement source') end
   local length, quarter_notes = reaper.GetMediaSourceLength(source)
+  local source_type = reaper.GetMediaSourceType(source, '')
   local channels = reaper.GetMediaSourceNumChannels(source)
   local sample_rate = reaper.GetMediaSourceSampleRate(source)
-  if quarter_notes or not finite(length) or math.abs(length - before.public.length_sec) > 1e-6
+  if (source_type ~= 'WAVE' and source_type ~= 'WAV')
+      or quarter_notes or not finite(length) or math.abs(length - before.public.length_sec) > 1e-6
       or channels ~= before.public.channels or sample_rate ~= before.public.sample_rate then
     reaper.PCM_Source_Destroy(source)
     return fail('UNSUPPORTED', 'replacement must retain exact item duration')
