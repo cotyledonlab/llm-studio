@@ -292,6 +292,8 @@ class ReaperStudioAdapter:
                 or not isinstance(result.get('source_path'), str) or not Path(result['source_path']).is_absolute()
                 or not _number(result.get('position_sec')) or result['position_sec'] < 0
                 or not _number(result.get('length_sec')) or result['length_sec'] <= 0
+                or type(result.get('channels')) is not int or result['channels'] not in (1, 2)
+                or type(result.get('sample_rate')) is not int or result['sample_rate'] < 8000
                 or type(result.get('state_change_count')) is not int):
             raise ReaperAdapterError('invalid observed stem item')
         return dict(result)
@@ -320,6 +322,8 @@ class ReaperStudioAdapter:
                 or observed['source_path'] != str(destination)
                 or observed['position_sec'] != expected['position_sec']
                 or observed['length_sec'] != expected['length_sec']
+                or observed['channels'] != expected['channels']
+                or observed['sample_rate'] != expected['sample_rate']
                 or result.get('old_source_path') != expected['source_path']):
             raise ReaperAdapterError('stem replacement readback differs; do not retry blindly')
         return {**result, 'observed': observed}

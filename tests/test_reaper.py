@@ -123,6 +123,7 @@ def test_replace_stem_uses_exact_item_observation_and_checks_readback(session, t
     stem.write_bytes(b'new fixture WAV bytes')
     baseline = {'track_guid': '{a}', 'item_guid': '{item}', 'take_guid': '{take}',
                 'source_path': '/old.wav', 'position_sec': 0, 'length_sec': 2,
+                'channels': 1, 'sample_rate': 48000,
                 'state_change_count': 5}
     calls = []
     def send(op, params):

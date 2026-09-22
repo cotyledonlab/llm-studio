@@ -3,11 +3,12 @@ local path, handler_path = ...
 local media = path:match('^(.*)/[^/]+$') .. '/media/'
 local old_path = media .. string.rep('a', 64) .. '.wav'
 local new_path = media .. string.rep('b', 64) .. '.wav'
-local old_source = {path=old_path, length=2}
+local old_source = {path=old_path, length=2, channels=1, sample_rate=48000}
 local current_source = old_source
 local revision, play, serial = 5, 0, 0
 local destroyed, undo_begin, undo_end = {}, 0, 0
 local corrupt_readback = false
+local bad_channels = false
 reaper = {
   genGuid=function() serial=serial+1; return 'id-' .. serial end,
   EnumProjects=function() return 'project', path end,
@@ -25,12 +26,15 @@ reaper = {
     return source.path
   end,
   GetMediaSourceLength=function(source) return source.length, false end,
+  GetMediaSourceNumChannels=function(source) return source.channels end,
+  GetMediaSourceSampleRate=function(source) return source.sample_rate end,
   GetMediaItemInfo_Value=function(_,key) return key == 'D_POSITION' and 0 or 2 end,
   GetMediaItemTakeInfo_Value=function(_,key) return key == 'D_PLAYRATE' and 1 or 0 end,
   GetSetMediaItemTakeInfo_String=function() return true, '{take}' end,
   GetProjectStateChangeCount=function() return revision end,
   GetPlayState=function() return play end,
-  PCM_Source_CreateFromFile=function(p) return {path=p, length=2} end,
+  PCM_Source_CreateFromFile=function(p) return {path=p, length=2,
+    channels=bad_channels and 2 or 1, sample_rate=48000} end,
   PCM_Source_Destroy=function(source) destroyed[#destroyed+1]=source end,
   SetMediaItemTake_Source=function(_,source) current_source=source; revision=revision+1; return true end,
   Undo_BeginBlock2=function() undo_begin=undo_begin+1 end,
@@ -56,6 +60,7 @@ call('replace_stem', 'CONFLICT')
 assert(current_source == old_source)
 p.expected.state_change_count=5
 play=1; call('replace_stem', 'UNSUPPORTED'); play=0
+bad_channels=true; call('replace_stem', 'UNSUPPORTED'); bad_channels=false
 corrupt_readback=true
 call('replace_stem', 'VERIFY_FAILED')
 assert(current_source == old_source and undo_begin == undo_end)

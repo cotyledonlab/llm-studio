@@ -78,6 +78,8 @@ local function find_stem(track, item_guid)
       if not source then return nil, 'active audio source missing' end
       local path = reaper.GetMediaSourceFileName(source, '')
       local source_length, quarter_notes = reaper.GetMediaSourceLength(source)
+      local channels = reaper.GetMediaSourceNumChannels(source)
+      local sample_rate = reaper.GetMediaSourceSampleRate(source)
       local position = reaper.GetMediaItemInfo_Value(item, 'D_POSITION')
       local length = reaper.GetMediaItemInfo_Value(item, 'D_LENGTH')
       local offset = reaper.GetMediaItemTakeInfo_Value(take, 'D_STARTOFFS')
@@ -86,12 +88,15 @@ local function find_stem(track, item_guid)
       if not got_take_guid or type(take_guid) ~= 'string' or take_guid == ''
           or quarter_notes or not finite(source_length) or not finite(position)
           or not finite(length) or not finite(offset) or not finite(rate)
+          or not finite(channels) or channels < 1 or channels > 2
+          or not finite(sample_rate) or sample_rate < 8000
           or offset ~= 0 or rate ~= 1 or math.abs(length - source_length) > 1e-6 then
         return nil, 'unqualified item time/length/source configuration'
       end
       return {item=item, take=take, source=source, public={item_guid=guid,
         take_guid=take_guid, track_guid=reaper.GetTrackGUID(track), source_path=path,
-        position_sec=position, length_sec=length,
+        position_sec=position, length_sec=length, channels=channels,
+        sample_rate=sample_rate,
         state_change_count=reaper.GetProjectStateChangeCount(0)}}
     end
   end
@@ -314,6 +319,8 @@ local function stem_operation(op, p, track, id, token, op_id, done, fail)
       or p.expected.source_path ~= before.public.source_path
       or p.expected.position_sec ~= before.public.position_sec
       or p.expected.length_sec ~= before.public.length_sec
+      or p.expected.channels ~= before.public.channels
+      or p.expected.sample_rate ~= before.public.sample_rate
       or p.expected.state_change_count ~= before.public.state_change_count then
     return fail('CONFLICT', 'stale or mismatched item observation; no source changed')
   end
@@ -326,7 +333,10 @@ local function stem_operation(op, p, track, id, token, op_id, done, fail)
   local source = reaper.PCM_Source_CreateFromFile(p.stem_path)
   if not source then return fail('IMPORT_FAILED', 'cannot load replacement source') end
   local length, quarter_notes = reaper.GetMediaSourceLength(source)
-  if quarter_notes or not finite(length) or math.abs(length - before.public.length_sec) > 1e-6 then
+  local channels = reaper.GetMediaSourceNumChannels(source)
+  local sample_rate = reaper.GetMediaSourceSampleRate(source)
+  if quarter_notes or not finite(length) or math.abs(length - before.public.length_sec) > 1e-6
+      or channels ~= before.public.channels or sample_rate ~= before.public.sample_rate then
     reaper.PCM_Source_Destroy(source)
     return fail('UNSUPPORTED', 'replacement must retain exact item duration')
   end
