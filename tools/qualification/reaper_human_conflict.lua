@@ -5,6 +5,9 @@ assert(c.profile:match('^/private/tmp/llm%-studio%-reaper/'))
 
 local report = assert(io.open(c.output, 'w'))
 local finished = false
+local lock_section = 'LLMStudioHumanConflict'
+local lock_key = c.source
+local lock_owner
 local function record(key, value)
   report:write(key .. '=' .. tostring(value) .. '\n')
   report:flush()
@@ -12,6 +15,9 @@ end
 local function finish(ok, detail)
   if finished then return end
   finished = true
+  if lock_owner and reaper.GetExtState(lock_section, lock_key) == lock_owner then
+    reaper.DeleteExtState(lock_section, lock_key, false)
+  end
   record('detail', detail)
   record('human_conflict_qualification', ok and 'pass' or 'fail')
   report:close()
@@ -26,6 +32,15 @@ if reaper.GetPlayState() ~= 0 then
   finish(false, 'transport must be stopped')
   return
 end
+if reaper.GetExtState(lock_section, lock_key) ~= '' then
+  finish(false, 'another producer-edit watcher is armed for this source')
+  return
+end
+lock_owner = tostring(os.time()) .. ':' .. tostring({})
+reaper.SetExtState(lock_section, lock_key, lock_owner, false)
+reaper.atexit(function()
+  finish(false, 'watcher terminated before qualification')
+end)
 
 local track = reaper.GetTrack(project, 0)
 local envelope = track and reaper.GetTrackEnvelopeByChunkName(track, '<VOLENV2')
@@ -95,12 +110,39 @@ local function observe()
 end
 
 if not observe() then return end
+local armed_at = reaper.time_precise()
+local max_wait_sec = 600
 record('armed', true)
+record('max_wait_sec', max_wait_sec)
 record('instruction', 'move the existing two-second volume point once')
+
+local function saved_chunk_matches(chunk)
+  local file = io.open(c.source, 'rb')
+  if not file then return false end
+  local saved = file:read('*a')
+  file:close()
+  if not saved then return false end
+  local function normalized(value)
+    local lines = {}
+    for line in value:gsub('\r\n', '\n'):gmatch('[^\n]+') do
+      lines[#lines + 1] = line:match('^%s*(.-)%s*$')
+    end
+    return table.concat(lines, '\n')
+  end
+  return normalized(saved):find(normalized(chunk), 1, true) ~= nil
+end
 
 local safe_poll
 local function poll()
   if finished then return end
+  if reaper.time_precise() - armed_at >= max_wait_sec then
+    finish(false, 'producer-edit watcher timed out without a qualifying point move')
+    return
+  end
+  if reaper.GetExtState(lock_section, lock_key) ~= lock_owner then
+    finish(false, 'producer-edit watcher ownership was lost')
+    return
+  end
   if reaper.EnumProjects(-1, '') ~= project or reaper.GetPlayState() ~= 0 then
     finish(false, 'session changed or transport started while armed')
     return
@@ -159,8 +201,10 @@ local function poll()
     record('producer_edit_preserved_exactly', preserved)
     if error_code == 'CONFLICT' and not applied and preserved and fresh then
       reaper.Main_SaveProjectEx(project, c.source, 0)
-      record('producer_edit_saved', true)
-      finish(true, 'fresh intervening human edit rejected without overwrite')
+      local saved = saved_chunk_matches(after_chunk)
+      record('producer_edit_saved', saved)
+      finish(saved, saved and 'fresh intervening human edit rejected without overwrite'
+        or 'human edit preserved in memory but on-disk save not verified')
     else
       finish(false, 'human edit conflict did not meet all checks')
     end

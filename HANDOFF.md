@@ -1,9 +1,9 @@
 # Current handoff — issue #10 acceptance complete, Gate A next
 
-Updated: 2026-09-22. Review branch: `feat/reaper-automation-handoff`.
-Draft PR: [#33](https://github.com/cotyledonlab/llm-studio/pull/33).
-Issue #10 now has a real producer-edit conflict observation; PR review and
-merge are the remaining repository steps. Issue #11 is the next Gate A slice.
+Updated: 2026-09-22. Implementation branch: `feat/reaper-automation-handoff`.
+PR: [#33](https://github.com/cotyledonlab/llm-studio/pull/33).
+Issue #10 has a real producer-edit conflict observation. Check GitHub for the
+current PR/issue state before resuming; issue #11 is the next Gate A slice.
 
 Read [automation qualification](docs/qualification/reaper-automation.md) and
 [adapter contract](adapters/reaper/README.md) before further live work.
@@ -46,10 +46,13 @@ applied no proposal, preserved the edited envelope chunk exactly and saved the
 disposable source. Evidence:
 `/private/tmp/llm-studio-reaper/human-conflict-20260922-retry.txt` (temporary).
 The first failed attempt is `human-conflict-20260922.txt` and must not be cited
-as a pass.
+as a pass. A later review hardened the watcher with a ten-minute absolute
+deadline, duplicate-owner exclusion, termination cleanup and an on-disk chunk
+check after save. The passing run predates that hardening, but its saved RPP
+was independently inspected and contained John's changed two-second point.
 
-Review and merge PR #33 after the corrected watcher, tests and diff are checked.
-Then resume issue #11's take-replacement and export investigation. The earlier
+After PR #33 is merged, resume issue #11's take-replacement and export
+investigation. The earlier
 #9 `audio.render_project` timeout remains unresolved; the successful explicit
 profile exports in #10 do not explain that failure. Do not repeat the same
 timeout unchanged. The installed transport and native handler paths have

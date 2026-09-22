@@ -1,8 +1,9 @@
 # REAPER integration qualification
 
 This is a private, macOS qualification slice, restricted to disposable projects.
-It does not authorize production mix proposals. Issue #10 envelope work is
-under qualification; see the bounded contract below.
+It does not authorize production mix proposals. Issue #10's bounded envelope
+qualification is complete; Gate A still requires issue #11. See the contract
+and evidence below.
 
 The external controller is pinned in `controller-pin.json`. Its file-drop
 transport, OSC resources and renderer remain upstream. `controller-studio-hook.patch`
@@ -66,6 +67,9 @@ package. The studio adapter has these operations:
 | `read_track(session, guid)` | `studio.get_track_state` | Gain, pan, FX names/parameter counts |
 | `set_mixer(session, guid, gain_db=..., pan=...)` | `studio.set_mixer` | Actual gain/pan after the write |
 | `import_stem(session, guid, wav)` | `studio.import_stem` | Native item GUID, source path, duration and position |
+| `read_volume_envelope(session, guid, start_sec=..., end_sec=...)` | `studio.read_volume_envelope` | Stable envelope GUID, timebase, points and expiring fingerprint |
+| `patch_volume_envelope(session, guid, baseline, points)` | `studio.patch_volume_envelope` | Bounded native patch, exact readback and recovery receipt |
+| `undo_volume_patch(session, guid, patch)` | `studio.undo_volume_patch` | Checked envelope-only compensating recovery or refusal |
 
 `silent=True` is explicit zero gain; `gain_db=None` leaves gain unchanged.
 Only WAV import is qualified. Python stages a content-addressed session asset;
