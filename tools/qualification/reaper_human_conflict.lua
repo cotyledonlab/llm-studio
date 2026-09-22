@@ -47,6 +47,10 @@ local params = {
 }
 local baseline
 local baseline_chunk
+local baseline_point_count
+local baseline_mid_index
+local baseline_mid_time
+local baseline_mid_raw
 local observed_at
 local refreshes = 0
 local function observe()
@@ -65,6 +69,19 @@ local function observe()
     return false
   end
   baseline = result
+  baseline_point_count = reaper.CountEnvelopePointsEx(envelope, -1)
+  baseline_mid_index = nil
+  for i = 0, baseline_point_count - 1 do
+    local got, time, raw = reaper.GetEnvelopePointEx(envelope, -1, i)
+    if got and time == 2 then
+      baseline_mid_index, baseline_mid_time, baseline_mid_raw = i, time, raw
+      break
+    end
+  end
+  if not baseline_mid_index then
+    finish(false, 'existing two-second point required')
+    return false
+  end
   local ok
   ok, baseline_chunk = reaper.GetEnvelopeStateChunk(envelope, '', false)
   if not ok then
@@ -94,6 +111,28 @@ local function poll()
     return
   end
   if current_chunk ~= baseline_chunk then
+    if reaper.CountEnvelopePointsEx(envelope, -1) ~= baseline_point_count then
+      finish(false, 'envelope point count changed; expected one existing point move')
+      return
+    end
+    local got, current_time, current_raw = reaper.GetEnvelopePointEx(
+      envelope, -1, baseline_mid_index)
+    if not got then
+      finish(false, 'two-second point unavailable after edit')
+      return
+    end
+    if current_time == baseline_mid_time and current_raw == baseline_mid_raw then
+      -- Clicking a point changes its selection flag and the chunk, but is not
+      -- the producer's automation edit. Refresh so a later move is tested on
+      -- an observation made after that selection change.
+      if not observe() then return end
+      reaper.defer(safe_poll)
+      return
+    end
+    if current_time <= 1 or current_time >= 3 then
+      finish(false, 'moved point left the guarded one-to-three-second range')
+      return
+    end
     local age = reaper.time_precise() - observed_at
     params.fingerprint = baseline.fingerprint
     params.envelope_guid = baseline.envelope_guid
@@ -110,6 +149,8 @@ local function poll()
     local preserved = after_chunk == current_chunk
     local fresh = age <= baseline.max_age_sec
     record('observation_age_sec', string.format('%.6f', age))
+    record('producer_point_before', string.format('%.9f,%.9f', baseline_mid_time, baseline_mid_raw))
+    record('producer_point_after', string.format('%.9f,%.9f', current_time, current_raw))
     record('max_age_sec', baseline.max_age_sec)
     record('within_freshness_bound', fresh)
     record('error_code', error_code or '')

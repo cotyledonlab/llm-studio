@@ -1,15 +1,15 @@
-# Current handoff — issue #10 in progress
+# Current handoff — issue #10 acceptance complete, Gate A next
 
-Updated: 2026-09-20. Resume branch: `feat/reaper-automation-handoff`.
+Updated: 2026-09-22. Review branch: `feat/reaper-automation-handoff`.
 Draft PR: [#33](https://github.com/cotyledonlab/llm-studio/pull/33).
-Implementation `81782cb`, native runner/report `099faf5`, both pushed.
-Issue #10 remains open. Do not merge or claim Gate A complete.
+Issue #10 now has a real producer-edit conflict observation; PR review and
+merge are the remaining repository steps. Issue #11 is the next Gate A slice.
 
 Read [automation qualification](docs/qualification/reaper-automation.md) and
 [adapter contract](adapters/reaper/README.md) before further live work.
 Bounded native volume observation/apply and checked envelope-only recovery are
-implemented. The current-main pinned-controller studio suite passes 72 tests
-with 8 optional integration skips. Native
+implemented. Before the producer-edit watcher correction, the pinned-controller
+studio suite passed 72 tests with 8 optional integration skips. Native
 copy-based qualification passed manual-lane copying, static-mode refusal,
 programmatic intervening-edit conflict, exact recovery, refusal after unrelated
 work, and patch save/reopen. Native global Undo restored pre-setup state in the
@@ -23,33 +23,37 @@ disposable profile is running at
 startup dialog. Always use this exact absolute `-cfgfile` when forwarding native
 scripts; never automate the DAW GUI or edit active profile configuration.
 
-Original active tab is `a3-probe/session.RPP`, with one `StudioAutomation` track.
-John manually moved points at 1, 2 and 3 seconds and confirmed it in conversation.
-Captured linear gains were 0.25118864, 0.0419846 and 0.00120226 respectively.
+The disposable source is `a3-probe/session.RPP`, with one `StudioAutomation`
+track. John's latest manual edit changed the two-second point's saved linear
+gain from 0.0419846 to 1.95447444. The one- and three-second points retain
+linear gains 0.25118864 and 0.00120226. Re-observe the active tab before any
+further live operation.
 Envelope GUID: `{4C4BF0CF-8580-B941-98FE-60269BE60A4B}`. Preserve his edits.
 Fresh evidence is under `automation-dxk76v2h/` and
 `automation-timebase-lvgmrmj3/`. Installed transport patch/recovery, six
-timebase cases, and exported-audio scope all pass on REAPER 7.80. The runner
-restored the original tab and preserved the original source RPP bytes.
+timebase cases, and exported-audio scope all pass on REAPER 7.80. The earlier
+runner restored the original tab and preserved the source RPP bytes at that
+time. The subsequent human edit intentionally changed the source RPP.
 The older #9 profile and producer gain/pan adjustments were not opened/changed.
 
-## Pending producer action and next work
+## Human conflict result and next work
 
-An actual intervening human edit remains unobserved. The latest inherited
-watcher refreshed 771 times but detected no envelope change before REAPER was
-stopped; do not call this a pass. Re-arm the committed human-conflict runner and
-ask John to move the existing two-second point while it is armed. The native
-programmatic edit separately demonstrates exact state mismatch rejection.
+The first armed run was a false positive: selection changed but the point's
+time and gain did not. The corrected watcher required an actual time/raw gain
+change and captured John's edit. It detected the change at age 10.709244 s
+within the 30 s observation bound. The native handler returned `CONFLICT`,
+applied no proposal, preserved the edited envelope chunk exactly and saved the
+disposable source. Evidence:
+`/private/tmp/llm-studio-reaper/human-conflict-20260922-retry.txt` (temporary).
+The first failed attempt is `human-conflict-20260922.txt` and must not be cited
+as a pass.
 
-Once this watcher finishes, save the disposable manual tab without losing edits.
-Remaining work is the actual human-edit rejection, empirical detection latency,
-and final producer acceptance review. Keep PR #33 draft until those are observed.
-Do not treat the native direct-handler runner as installed-transport evidence.
-The new runner requires exact active source/profile and waits for its observed
-completion; source revision or native assertion failures make the CLI fail.
-
-Keep issue #10 and PR #33 open until acceptance is established. The #9 renderer
-timeout still belongs to #11; it has not been resolved by this session.
+Review and merge PR #33 after the corrected watcher, tests and diff are checked.
+Then resume issue #11's take-replacement and export investigation. The earlier
+#9 `audio.render_project` timeout remains unresolved; the successful explicit
+profile exports in #10 do not explain that failure. Do not repeat the same
+timeout unchanged. The installed transport and native handler paths have
+separate evidence in the qualification report.
 
 ---
 

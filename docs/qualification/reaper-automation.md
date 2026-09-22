@@ -1,9 +1,10 @@
 # REAPER automation qualification — issue #10
 
-Updated: 2026-09-20. **In progress; not a Gate A pass.**
+Updated: 2026-09-22. **Issue #10 acceptance evidence complete; Gate A still
+depends on issue #11.**
 Implementation: `feat/reaper-automation-handoff`, initial implementation `81782cb`.
 Controller remains pinned at `fd56d0008ffa5fba25cc58a70e5ae632c80b4c16`.
-Native host: REAPER `7.79/macOS-arm64`, fresh disposable profile.
+Native host: REAPER `7.80/macOS-arm64`, disposable `a3-probe` profile.
 
 ## Contract and limits
 
@@ -118,14 +119,31 @@ on this build, so qualification changed native `TIMELOCKMODE` only in unopened
 copies. Opening a second project from one running ReaScript also ended that
 script's continuation; the final runner forwards one script per isolated case.
 
-## Outstanding
+## 2026-09-22 producer edit and conflict evidence
 
-- Actual intervening human-edit rejection, distinct from native API simulation.
-- Empirical human-edit detection latency. The watcher refreshes at 20 seconds
-  against a 30-second receipt expiry, but no human edit was observed to measure.
-- Final A03–A06/A15 producer acceptance review, including the limits of synchronous
-  serialization for human-edit ordering. No artificial mid-callback UI edit is
-  claimed, and no atomicity claim is made for arbitrary external extensions.
+John made an edit in the disposable `a3-probe/session.RPP` while the native
+watcher was armed. The first watcher run reported a conflict after the point's
+selection flag changed, although its time and gain did not. That was a test
+false positive. The watcher was corrected to refresh its observation on
+selection-only changes and require a time or raw gain change at the existing
+two-second point before assessing the conflict. No passing evidence is claimed
+from the first run.
+
+On the corrected run, the saved RPP's two-second point changed from linear
+gain `0.0419846` to `1.95447444`; the one- and three-second points remained
+unchanged. The watcher observed the real change `10.709244` seconds after its
+latest observation, within the receipt's 30-second bound. The synchronous
+patch returned `CONFLICT` with `stale observation; no points written`;
+`proposal_applied=false`, and the exact edited envelope chunk was preserved
+and saved. The local evidence is
+`/private/tmp/llm-studio-reaper/human-conflict-20260922-retry.txt`; the first
+run is `/private/tmp/llm-studio-reaper/human-conflict-20260922.txt`. These
+temporary files may expire. This satisfies the observed human-edit rejection
+and detection-latency check for the stated disposable workflow. It does not
+prove ordering against an arbitrary external extension editing inside the
+same synchronous callback.
+
+## Remaining Gate A work
 
 The previous #9 renderer timeout remains unresolved for #11. This report does
 not claim musical quality or listening acceptance for the automation patch.
