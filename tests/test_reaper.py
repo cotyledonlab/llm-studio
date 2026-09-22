@@ -1,5 +1,7 @@
 from dataclasses import replace
 from pathlib import Path
+import shutil
+import subprocess
 
 import pytest
 
@@ -7,6 +9,15 @@ from llm_studio.reaper import (
     ReaperAdapterError, ReaperStudioAdapter, Session, SessionChanged,
     Track, TrackBindingOrphaned, UnsupportedReaperCapability,
 )
+
+
+def test_native_stem_handler_contract():
+    lua = shutil.which('lua')
+    if not lua:
+        pytest.skip('Lua required for native handler contract')
+    subprocess.run([lua, 'tests/fixtures/reaper_stem.lua',
+                    '/private/tmp/llm-studio-reaper/contract.RPP',
+                    'adapters/reaper/studio_handler.lua'], check=True)
 
 
 @pytest.fixture
@@ -105,3 +116,41 @@ def test_import_rejects_media_symlink_and_producer_project(session, tmp_path):
         adapter.import_stem(session, '{a}', source)
     with pytest.raises(ReaperAdapterError, match='outside disposable'):
         ReaperStudioAdapter(lambda *args: None, disposable_roots=()).set_mixer(session, '{a}', gain_db=0)
+
+
+def test_replace_stem_uses_exact_item_observation_and_checks_readback(session, tmp_path):
+    stem = tmp_path / 'new.wav'
+    stem.write_bytes(b'new fixture WAV bytes')
+    baseline = {'track_guid': '{a}', 'item_guid': '{item}', 'take_guid': '{take}',
+                'source_path': '/old.wav', 'position_sec': 0, 'length_sec': 2,
+                'state_change_count': 5}
+    calls = []
+    def send(op, params):
+        calls.append((op, params))
+        if op == 'studio.read_stem':
+            return {'ok': True, 'result': baseline}
+        return {'ok': True, 'result': {'observed': {**baseline,
+            'source_path': params['stem_path'], 'state_change_count': 6},
+            'old_source_path': baseline['source_path']}}
+    adapter = ReaperStudioAdapter(send, disposable_roots=(tmp_path,))
+    assert adapter.read_stem(session, '{a}', '{item}') == baseline
+    result = adapter.replace_stem(session, '{a}', baseline, stem)
+    assert calls[-1][0] == 'studio.replace_stem'
+    assert calls[-1][1]['expected'] == baseline
+    assert calls[-1][1]['item_guid'] == '{item}'
+    assert Path(result['observed']['source_path']).read_bytes() == stem.read_bytes()
+    assert result['observed']['take_guid'] == '{take}'
+    adapter._bridge_send = lambda op, params: {'ok': True, 'result': {
+        'observed': {**baseline, 'source_path': params['stem_path'], 'take_guid': '{wrong}'},
+        'old_source_path': '/old.wav'}}
+    with pytest.raises(ReaperAdapterError, match='readback differs'):
+        adapter.replace_stem(session, '{a}', baseline, stem)
+
+
+def test_replace_stem_rejects_bad_observation_before_dispatch(session, tmp_path):
+    stem = tmp_path / 'new.wav'
+    stem.write_bytes(b'fixture')
+    adapter = ReaperStudioAdapter(lambda *args: pytest.fail('unexpected dispatch'),
+                                  disposable_roots=(tmp_path,))
+    with pytest.raises((ValueError, ReaperAdapterError)):
+        adapter.replace_stem(session, '{a}', {'item_guid': '{item}'}, stem)
