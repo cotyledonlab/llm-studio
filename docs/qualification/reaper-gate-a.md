@@ -42,9 +42,11 @@ John's Keys envelope chunk was also identical. Bass gain `0.50118723362727`,
 pan `-0.2`, and `VST: ReaEQ (Cockos)` survived save/reopen. The first reopen
 readback checked track names and media paths, but did not compare every
 pre-save track/item/take GUID to its reopened binding. Independent review
-identified that gap; the corrected harness now records and compares those
-GUIDs and still needs a fresh native run. This Bass gain was set by the test
-script; it is **not** counted as a new human fader observation.
+identified that gap. The corrected native run at
+`/private/tmp/llm-studio-reaper/gate-a4-7rng30qk/native-evidence.txt` records
+and compares all three GUIDs per part across save/reopen; each comparison
+passed. This Bass gain was set by the test script; it is **not** counted as a
+new human fader observation.
 
 Opening the saved project ended the running ReaScript before its subsequent
 lines. A separate readback script completed reopen verification and restored
@@ -85,9 +87,9 @@ batch mode.
 1. John was asked to change Bass gain in the disposable three-track tab, but
    reported a dialog and that the project closed. No manual edit was observed
    or counted. A read-only REAPER probe found the app still running and both
-   tabs still open at that time. John has since closed all but one tab; the
-   remaining tab is a dirty generated automation-timebase project, not the A4
-   qualification copy. Preserve it as observed.
+   tabs still open at that time. Later qualification tab cleanup produced
+   repeated dialogs and the current state is unknown. Stop REAPER operations
+   until the app state is re-observed and the dialogs are cleared.
 2. After a verified manual Bass move, replace the Drums source again with a
    fresh observation, save/reopen, and independently verify the exact gain,
    Keys envelope, FX, media references and audible export.

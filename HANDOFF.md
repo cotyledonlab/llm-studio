@@ -1,6 +1,7 @@
 # Current handoff — issue #11 draft, live manual check pending
 
-Updated: 2026-09-22. Branch: `codex/issue-11-gate-a` at `e67b97a`.
+Updated: 2026-09-22. Branch: `codex/issue-11-gate-a` at `bda10cd` plus a
+small source-shape guard awaiting commit.
 Draft PR: [#37](https://github.com/cotyledonlab/llm-studio/pull/37).
 Issue [#11](https://github.com/cotyledonlab/llm-studio/issues/11) remains open;
 Gate A is not accepted. Parallel issue #15 work is at draft PR #35 and must not
@@ -9,23 +10,25 @@ mutate live REAPER. PR #33 is merged and issue #10 closed.
 Read [Gate A qualification](docs/qualification/reaper-gate-a.md) and the
 [adapter contract](adapters/reaper/README.md) before continuing. This branch
 implements same-length WAV replacement for a GUID-bound single-take item. The
-first direct native trial passed replacement and stale-request rejection, and
-the copy rendered. Independent review found the reopen harness did not compare
-pre-save track/item/take GUIDs to the reopened bindings; a corrected harness is
-in progress and needs a fresh native run. A later review fix now requires the
-old and new source types to be WAV. The live native trial predates that guard.
-The installed transport and manual Bass gain acceptance remain open. The
-45-second renderer timeout from #9 did not reproduce in one bounded no-profile
-retry and remains unexplained. Review PR #37 findings before merging.
+corrected direct native run passed source replacement, stale-request
+rejection, and track/item/take GUID comparisons across save/reopen. Evidence:
+`/private/tmp/llm-studio-reaper/gate-a4-7rng30qk/native-evidence.txt`. Source
+shape guards now require one empty track with the Keys envelope; the run passed
+that precondition. Installed file-drop transport and manual Bass gain
+acceptance remain open. The 45-second renderer timeout from #9 did not
+reproduce in one bounded no-profile retry and remains unexplained. Keep PR #37
+draft until Gate A is decided.
 
 ## Live REAPER ownership and producer state
 
 Only this task may mutate the DAW. REAPER was using the disposable profile
 `/private/tmp/llm-studio-reaper/a3-probe/profile/reaper.ini` at last inspection.
-John has since closed all but one tab. A read-only bridge snapshot identified
-the remaining tab as the generated one-track
-`automation-timebase-lvgmrmj3/project_time_inherited.RPP`, dirty in memory; it
-is not the A4 qualification copy. Leave it untouched. Previously the original
+John had closed all but one tab. During continuation, the saved one-track
+`automation-timebase-dk2qtrq9/project-1.RPP` fixture was opened for the native
+run, along with disposable copies. A cleanup helper closed one clean test tab;
+subsequent scripts produced repeated dialogs, and the current tab state is
+unknown. John reported an error from `close_run_tab.lua`; stop REAPER work and
+re-observe after the dialogs are cleared. Previously the original
 `a3-probe/session.RPP` was dirty, and its **in-memory** two-second Keys
 envelope point differed from the last saved source RPP. The source RPP on disk
 was not changed by the test. Preserve any remaining producer state.
@@ -47,12 +50,10 @@ completed. Do not repeat either failure path unchanged.
 
 ## Next bounded steps
 
-1. Finish PR #37 review findings and verify the GUID-based save/reopen harness,
-   WAV source-type guard, and stage-two dispatch synchronization.
-2. If the single remaining tab is suitable and John can interact with the
-   disposable A4 copy, capture his real Bass
-   gain move, then replace Drums again with a fresh observation, save/reopen and
-   verify exact gain/envelope/FX/media plus rendered audio. Preserve both tabs.
+1. Resume REAPER work only after observing the app state and clearing the
+   repeated script dialogs. Avoid `close_run_tab.lua`.
+2. Capture a real Bass fader change if John approves the disposable handoff,
+   then replace Drums with a fresh observation and verify save/reopen plus audio.
 3. Qualify the new handler through the pinned controller's installed file-drop
    transport in a **separate disposable profile**, not by modifying the running
    profile. Then write the complete Gate A capability matrix and go/no-go

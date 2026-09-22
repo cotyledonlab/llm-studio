@@ -28,6 +28,8 @@ def test_prepares_two_stage_native_runner_without_opening_reaper():
         try:
             assert root.is_dir()
             assert 'reaper_take_replacement.lua' in (root / 'run.lua').read_text()
+            assert 'single_track_source' in Path('tools/qualification/reaper_take_replacement.lua').read_text()
+            assert 'empty_media_source_track' in Path('tools/qualification/reaper_take_replacement.lua').read_text()
             assert 'reaper_take_replacement_reopen.lua' in (root / 'reopen.lua').read_text()
             assert len(list((root / 'media').glob('*.wav'))) == 4
             assert not (root / 'native-evidence.txt').exists()
