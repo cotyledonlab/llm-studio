@@ -217,7 +217,11 @@ def _worker_main(worker: Worker, job: RenderJob, output: Path, connection: Conne
 
 
 class RenderService:
-    """Supervise bounded render workers and own immutable publication."""
+    """Supervise bounded render workers and own immutable publication.
+
+    ``admission_check`` is a fast, read-only host-pressure probe. Returning
+    false holds the FIFO queue until the next poll; raising fails that job.
+    """
 
     def __init__(
         self,
@@ -226,6 +230,7 @@ class RenderService:
         cancel_grace_s: float = 4.0,
         poll_interval_s: float = 0.01,
         start_method: str = "spawn",
+        admission_check: Callable[[RenderJob], bool] | None = None,
     ) -> None:
         if max_workers <= 0:
             raise ValueError("max_workers must be positive")
@@ -234,6 +239,7 @@ class RenderService:
         self.max_workers = max_workers
         self.cancel_grace_s = cancel_grace_s
         self.poll_interval_s = poll_interval_s
+        self.admission_check = admission_check
         self._context = multiprocessing.get_context(start_method)
         self._records: dict[str, _Record] = {}
         self._queue: deque[str] = deque()
@@ -417,9 +423,21 @@ class RenderService:
             for record in self._records.values()
         )
         while self._queue and active < self.max_workers and not self._closing:
-            record = self._records[self._queue.popleft()]
+            record = self._records[self._queue[0]]
             if record.state is not JobState.QUEUED:
+                self._queue.popleft()
                 continue
+            if self.admission_check is not None:
+                try:
+                    if not self.admission_check(record.job):
+                        break
+                except BaseException:
+                    self._queue.popleft()
+                    record.state = JobState.FAILED
+                    record.finished_at = datetime.now(UTC)
+                    record.error = "admission check failed:\n" + traceback.format_exc(limit=12)
+                    continue
+            self._queue.popleft()
             self._start(record)
             active += 1
         self._condition.notify_all()

@@ -132,6 +132,34 @@ def test_default_admission_limit_runs_two_jobs_and_queues_the_third(tmp_path: Pa
         assert service.wait("third", timeout=3).state is JobState.SUCCEEDED
 
 
+def test_host_admission_pause_keeps_worker_queued_until_pressure_clears(tmp_path: Path) -> None:
+    admitted = False
+
+    def can_start(_: RenderJob) -> bool:
+        return admitted
+
+    with RenderService(admission_check=can_start) as service:
+        job = _job(tmp_path, "pressure")
+        assert service.submit(job, _successful_worker).state is JobState.QUEUED
+        time.sleep(0.05)
+        assert not job.result_path.exists()
+        admitted = True
+        assert service.wait(job.job_id, timeout=3).state is JobState.SUCCEEDED
+
+
+def test_admission_probe_error_fails_one_job_without_stopping_supervisor(tmp_path: Path) -> None:
+    def broken(_: RenderJob) -> bool:
+        raise RuntimeError("memory monitor unavailable")
+
+    with RenderService(admission_check=broken) as service:
+        job = _job(tmp_path, "probe-error")
+        result = service.submit(job, _successful_worker)
+
+    assert result.state is JobState.FAILED
+    assert "memory monitor unavailable" in (result.error or "")
+    assert not job.result_path.exists()
+
+
 def test_absolute_deadline_terminates_hung_process_group_without_publication(
     tmp_path: Path,
 ) -> None:
