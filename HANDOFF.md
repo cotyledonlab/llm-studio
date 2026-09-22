@@ -1,7 +1,8 @@
 # Current handoff — issue #11 draft, live manual check pending
 
-Updated: 2026-09-22. Branch: `codex/issue-11-gate-a` at `bda10cd` plus a
-small source-shape guard awaiting commit.
+Updated: 2026-09-22. Branch: `codex/issue-11-gate-a`; PR head at review start
+was `b884cfb`. Export-bound fix `679cefa` and pinned file-drop test `53e9d87`
+were committed afterward.
 Draft PR: [#37](https://github.com/cotyledonlab/llm-studio/pull/37).
 Issue [#11](https://github.com/cotyledonlab/llm-studio/issues/11) remains open;
 Gate A is not accepted. Parallel issue #15 work is at draft PR #35 and must not
@@ -18,6 +19,18 @@ that precondition. Installed file-drop transport and manual Bass gain
 acceptance remain open. The 45-second renderer timeout from #9 did not
 reproduce in one bounded no-profile retry and remains unexplained. Keep PR #37
 draft until Gate A is decided.
+
+PR #37's local `origin/main...b884cfb` review found one actionable offline
+gap: the export checker could accept mix and stems truncated to the same length.
+The checker now compares all four WAV frame counts with the fixture's
+full-project item bound. Read-only recheck of the retained files found 220,500
+frames each at 44.1 kHz; this fixture has no extra tail. A new offline test
+round-trips `studio.replace_stem` through the pinned controller's Python
+file-drop client and a fake daemon. This does not qualify the live installed
+Lua handler. The Gate A report now has a capability matrix. The local suite
+passes 82 tests with 9 skips; the optional real-controller install test is
+inapplicable because the adjacent controller checkout has advanced beyond
+the pin. GitHub PR metadata/checks could not be fetched during this review.
 
 ## Live REAPER ownership and producer state
 

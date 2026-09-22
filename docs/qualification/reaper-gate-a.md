@@ -81,6 +81,33 @@ component and negligible 330 Hz component. Evidence:
 These are deterministic test tones, not a musical-quality judgement. Part
 exports came from controlled offline RPP copies, not REAPER's native stem
 batch mode.
+The export checker now derives the five-second full-project bound from the
+fixture's item positions and lengths. A read-only recheck of the retained mix
+and all three stems found 220,500 frames each at 44.1 kHz. This is a zero-extra-
+tail fixture; it does not qualify tails from instruments or effects in other
+projects.
+
+## Gate A capability matrix
+
+Statuses refer to the stated evidence scope; copy-based qualification does not
+by itself establish the complete producer workflow.
+
+| SPEC ID | Capability | Status and evidence |
+|---|---|---|
+| A01 | Core tracer through APIs/protocols without GUI automation | **Partial.** A3 automation and A4 replacement/export used native APIs, ReaScript, file-drop transport, or CLI on disposable copies. This slice has not completed the full core tracer while another application has keyboard focus. |
+| A02 | Manual Bass gain survives generation and accepted drum replacement | **Pending manual check.** A4 replacement preserved the scripted Bass gain and processing across save/reopen; this is not a human fader observation. The requested manual Bass move was not observed. |
+| A03 | Manual Keys envelope survives unrelated edits, restart and export | **Prior A3 evidence.** The issue #10 qualification records John's manual Keys points, byte-identical copy, unrelated edits, save/reopen, and audible export. A4 also preserved the copied Keys envelope through Drums replacement and export. The final Bass-dependent A4 workflow is still pending. |
+| A04 | Overlapping edit blocks stale proposal without overwriting points | **Prior A3 evidence.** The corrected producer-edit run returned `CONFLICT` and preserved John's edited envelope chunk exactly. Earlier programmatic conflict checks also passed. |
+| A05 | Envelope range boundaries and outside points are preserved | **Partial, prior A3 evidence.** Native bounded patch and export checks preserved points outside the edited interval and the right endpoint shape; injected-host checks cover additional boundary cases. No complete Gate A envelope scenario is claimed. |
+| A06 | Automation modes are observed without hidden mode changes | **Partial, prior A3 evidence.** Static gain writes were refused across six native automation modes, and mode/transport/global override refusals have injected-host coverage. Distinct mode observation and end-to-end no-mode-change acceptance remain unqualified. |
+| A14 | Pending writes cannot target a newly opened session | **Prior controller evidence, bounded.** The #9 environment report records switch-away-and-back rejection of an old session token. The token is callback-observed and does not guarantee detection of a switch entirely between callbacks; this does not qualify the A4 replacement path through installed transport. |
+| A15 | Revert preserves later human work or refuses unsafe global undo | **Partial, prior A3 evidence.** Checked envelope-only recovery restored the target and refused after an unrelated track edit; the unsafe global Undo path was removed. A recovery-after-human-edit case is not recorded. |
+| A18 | Export includes accepted takes and audible manual automation with correct duration/tails | **Copy-based evidence passes for this zero-extra-tail fixture.** A4 rendered the reopened, replaced-take project at the expected five-second duration; aligned stems reproduced the mix and the Keys envelope was audible. Nonzero tails are unqualified, and the historical 45-second renderer timeout remains unexplained. |
+
+The new replacement operation still needs installed-transport qualification.
+The human Bass check and subsequent replacement/reopen/export check remain
+pending. A4's bounded renders show the old renderer timeout did not reproduce
+in these attempts; they do not explain or resolve that reliability failure.
 
 ## Remaining acceptance
 
