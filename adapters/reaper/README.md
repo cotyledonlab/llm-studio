@@ -70,12 +70,21 @@ package. The studio adapter has these operations:
 | `read_volume_envelope(session, guid, start_sec=..., end_sec=...)` | `studio.read_volume_envelope` | Stable envelope GUID, timebase, points and expiring fingerprint |
 | `patch_volume_envelope(session, guid, baseline, points)` | `studio.patch_volume_envelope` | Bounded native patch, exact readback and recovery receipt |
 | `undo_volume_patch(session, guid, patch)` | `studio.undo_volume_patch` | Checked envelope-only compensating recovery or refusal |
+| `read_stem(session, guid, item_guid)` | `studio.read_stem` | Item/take GUID, source, duration, format and project revision |
+| `replace_stem(session, guid, baseline, wav)` | `studio.replace_stem` | Checked same-length/source-format WAV replacement and observed binding |
 
 `silent=True` is explicit zero gain; `gain_db=None` leaves gain unchanged.
 Only WAV import is qualified. Python stages a content-addressed session asset;
 REAPER attaches it and reads back the actual item. A failed/timeout reply must
 not be blindly retried because native item insertion may already have happened.
 Retry/reconciliation policy belongs to subsequent durability work.
+
+The A4 replacement operation targets one existing single-take WAV item by
+GUID, keeps its position/length and source format, and fails closed on a stale
+item/project observation. It does not replace arbitrary MIDI takes, time-stretch
+settings or multi-take comp lanes. [Gate A evidence](../../docs/qualification/reaper-gate-a.md)
+distinguishes native copy-based success from the pending manual-fader and
+installed-transport acceptance checks.
 
 Session identity is the saved path, not an invented REAPER project GUID.
 The token combines a handler-load nonce with observed project pointer/path
