@@ -1,5 +1,52 @@
 # Current handoff — issue #11 draft, live checks pending
 
+## 2026-09-23 A05/A06/A15 continuation
+
+The A05 retained baseline, patched, and reopened native envelope chunks were
+compared again. The 0/4-second outside points and 1/3-second boundary points
+are exact, the interior differs, and the patched/reopened chunks match. Prior
+paired exports have zero delta outside 1–3 seconds. The Gate A matrix now marks
+A05 passed for the supported bounded linear patch, with curved subdivision and
+automation items outside the adapter contract. Evidence summary:
+`/private/tmp/llm-studio-reaper/issue11-a06-a15-hcrpm8ko/a05-boundary-evidence.json`.
+
+A first focused A06 run on `session-mode.RPP` observed all six distinct native
+automation modes through the installed adapter with one unchanged Keys lane and
+global override. Its mode-1 patch **applied natively** but the Python adapter
+raised `patch readback differs` after receipt: the requested non-grid midpoint
+was serialized with tiny floating-point differences, and the adapter compared
+times exactly. Native readback reconciled the applied point at about 1.667
+seconds and confirmed the runner restored the original mode. The project is
+dirty and unsaved in its own tab; do not retry that write or save the tab.
+Partial evidence:
+`/private/tmp/llm-studio-reaper/issue11-a06-a15-hcrpm8ko/a06-mode-evidence.json`.
+The adapter now allows only REAPER's eight-decimal precision budget while
+retaining exact silence parity and rejecting material time/gain drift. Focused
+tests passed 14/14; full suite passed 121 with 8 skips. Fix `ad69cd3` was
+committed and pushed. A fresh, byte-identical `session-mode-retry.RPP` copy then
+passed all six native/adapter mode readbacks through the installed bridge. The
+Keys lane and global override stayed unchanged across the observation loop;
+the mode-1 bounded patch passed with native/adapter mode 1 before and after,
+and the original mode 0 was restored. Evidence:
+`/private/tmp/llm-studio-reaper/issue11-a06-a15-hcrpm8ko/a06-mode-retry-evidence.json`.
+
+For A15, John's first manual pan drag on a named spare track was detected while
+still moving. Checked recovery succeeded and later independent native readback
+showed the Keys envelope exactly restored and the manual pan retained at 0.592.
+The first runner incorrectly required `CONFLICT` and failed before immediate
+post-recovery readback, so this is strong bounded evidence rather than a clean
+scripted pass. Its dirty `session-recovery.RPP` tab is preserved. A corrected
+runner accepts either a scoped restore preserving pan or a conflict preserving
+both edits, and waits for a settled pan plus a project revision. In a fresh
+`session-recovery-retry.RPP` tab, John's second move settled at pan 0.592,
+revision advanced from 3 to 5, and recovery returned `CONFLICT`. Immediate
+readback retained both pan and patched Keys envelope. The saved RPP and a clean
+four-track reopened copy retained pan 0.592 and Keys midpoint 0.25. Evidence:
+`/private/tmp/llm-studio-reaper/issue11-a06-a15-hcrpm8ko/session-recovery-retry.RPP.a15-human-recovery-1790143129.txt`
+and `reopen-recovery.txt` beside it. A05/A06/A15 now pass for their bounded
+disposable fixtures. A01 and the historical renderer timeout still prevent a
+full Gate A pass. Keep PR #37 draft and issue #11 open.
+
 ## 2026-09-23 bridge lifecycle follow-up
 
 Sol reviewed the REAPER relaunch fault. The bridge patch now claims a fresh
@@ -36,7 +83,7 @@ resource. It does not coordinate separate REAPER processes sharing a resource.
 The on-disk heartbeat file can look fresh for up to 15 seconds after shutdown.
 
 Gate A is a **no-go for full acceptance** despite the A4 pass described below:
-A01, A05, A06, and A15 remain partial, and the old renderer timeout remains
+A01 remains partial, and the old renderer timeout remains
 unexplained. Keep PR #37 draft and issue #11 open. Next work should address or
 explicitly narrow those remaining capability checks without repeating the
 accepted A4 replacement on an already changed tab.
