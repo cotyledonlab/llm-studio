@@ -50,6 +50,46 @@ def test_db_patch_and_readback_validation(tmp_path):
         adapter.patch_volume_envelope(session, '{track}', baseline(), points)
 
 
+def _patch_readback_adapter(tmp_path, points, *, silent_request=False):
+    project = tmp_path / 'session.RPP'
+    project.touch()
+    session = Session(str(project), 'token', project, 1, (Track('{track}', 'Keys', 0),))
+    observed = baseline()
+    observed['points'] = [dict(time_sec=time, quarter_note=time * 2, volume=volume,
+                               raw_value=volume, shape=0, tension=0, selected=False)
+                          for time, volume in points]
+    adapter = ReaperStudioAdapter(
+        lambda op, params: {'ok': True, 'result': {'observed': observed, 'receipt': 'receipt'}},
+        disposable_roots=(tmp_path,))
+    midpoint = (dict(time_sec=1.6666666666667, silent=True) if silent_request else
+                dict(time_sec=1.6666666666667, gain_db=-12))
+    request = [dict(time_sec=1, gain_db=0), midpoint, dict(time_sec=3, gain_db=0)]
+    return adapter, session, request
+
+
+def test_patch_readback_accepts_reaper_eight_decimal_quantization(tmp_path):
+    midpoint_volume = round(10 ** (-12 / 20), 8)
+    midpoint_time = round(1.6666666666667, 8)
+    adapter, session, request = _patch_readback_adapter(
+        tmp_path, [(1, 1), (midpoint_time, midpoint_volume), (3, 1)])
+    result = adapter.patch_volume_envelope(session, '{track}', baseline(), request)
+    assert result['observed']['points'][1]['time_sec'] == midpoint_time
+    assert result['observed']['points'][1]['gain_db'] == pytest.approx(-12, abs=1e-6)
+
+
+@pytest.mark.parametrize('middle,silent_request', [
+    ((1.66666666, round(10 ** (-12 / 20), 8)), False),  # More than the time serialization tolerance.
+    ((1.66666667, round(10 ** (-11.9 / 20), 8)), False),  # Material gain difference.
+    ((1.66666667, 0), False),  # Requested nonzero gain became silence.
+    ((1.66666667, round(10 ** (-12 / 20), 8)), True),  # Requested silence became nonzero gain.
+])
+def test_patch_readback_rejects_material_drift_and_silence_mismatch(tmp_path, middle, silent_request):
+    adapter, session, request = _patch_readback_adapter(
+        tmp_path, [(1, 1), middle, (3, 1)], silent_request=silent_request)
+    with pytest.raises(ReaperAdapterError, match='readback differs'):
+        adapter.patch_volume_envelope(session, '{track}', baseline(), request)
+
+
 @pytest.mark.parametrize('field,value', [('fingerprint', ''), ('state_change_count', None),
     ('scaling_mode', 4), ('max_age_sec', 1000), ('effective_timebase', 1),
     ('attachment_domain', 'project_beats')])

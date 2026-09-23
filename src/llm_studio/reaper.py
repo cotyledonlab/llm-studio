@@ -254,10 +254,25 @@ class ReaperStudioAdapter:
             raise ReaperAdapterError('missing patch receipt/readback; do not retry blindly')
         observed = self._envelope_observed(observed, guid, start, end)
         if len(observed['points']) != len(encoded) or any(
-                actual['time_sec'] != wanted['time_sec'] or not math.isclose(actual['volume'], wanted['volume'], rel_tol=1e-9, abs_tol=1e-12)
+                not self._patch_point_matches(actual, wanted)
                 for actual, wanted in zip(observed['points'], encoded)):
             raise ReaperAdapterError('patch readback differs; do not retry blindly')
         return {**result, 'observed': observed}
+
+    @staticmethod
+    def _patch_point_matches(actual: Mapping[str, Any], wanted: Mapping[str, Any]) -> bool:
+        # REAPER serializes envelope time and gain to eight decimal places.
+        # Allow only that serialization noise; preserve strict silence parity.
+        if abs(actual['time_sec'] - wanted['time_sec']) > 5.1e-9:
+            return False
+        actual_volume, wanted_volume = actual['volume'], wanted['volume']
+        if (actual_volume == 0) != (wanted_volume == 0):
+            return False
+        if actual_volume == 0:
+            return True
+        actual_db = 20 * math.log10(actual_volume)
+        wanted_db = 20 * math.log10(wanted_volume)
+        return abs(actual_db - wanted_db) <= 1e-6
 
     def undo_volume_patch(self, session: Session, guid: str, patch: Mapping[str, Any]) -> Mapping[str, Any]:
         """Restore the prior envelope in a checked compensating transaction."""
