@@ -1,9 +1,9 @@
 # REAPER Gate A / issue #11 qualification
 
-Updated: 2026-09-23. **Technical A4 copy-based checks pass; Gate A is not yet
-accepted.** The human Bass move was observed and copied, but the installed
-file-drop transport has duplicate handlers and the new take has not passed
-save/reopen and export. This report does not replace the completed [A3 automation
+Updated: 2026-09-23. **The installed A4 replacement, save/reopen, and export
+passed on a disposable copy; Gate A is not yet accepted.** The human Bass move
+was observed and preserved. Bridge relaunch behavior and wider Gate A coverage
+remain open. This report does not replace the completed [A3 automation
 qualification](reaper-automation.md) or claim the old renderer timeout is fixed.
 
 ## Scope and builds
@@ -175,6 +175,55 @@ not run after script top-level execution. A startup dialog is again suspected;
 John was asked to check the new instance. The single-owner runtime behavior
 and a complete replacement/save/reopen/export sequence remain unqualified.
 
+John selected an audio device in that new instance; no license dialog appeared
+because the protected license file had already been copied into its resource.
+The minimal deferred probe then completed and the bridge heartbeat appeared.
+Four file-drop snapshots initially showed one stable session token, but the
+startup tab unexpectedly contained six in-memory tracks. It was left clean and
+untouched. A uniquely named byte-identical copy of the saved manual RPP was
+opened in a new tab; native enumeration proved exactly one selected target,
+three clean tracks, stopped transport, and the earlier six-track tab unchanged.
+Four further snapshots kept one token with the expected three track GUIDs.
+Evidence: `/private/tmp/llm-studio-reaper/issue11-owner-4yhg_yj8/tab-proof-before-restart.txt`.
+
+An intentional second launch of the same bridge ReaScript stopped its replies.
+Native ExtState inspection found a stale heartbeat after the launch, consistent
+with REAPER terminating the old script before the new invocation returned on
+the fresh-heartbeat guard. After the heartbeat aged, one launch restored a
+single stable bridge token. This lifecycle fault is separate from the earlier
+duplicate-handler race. The installed operation below ran with that restored
+owner; a relaunch-safe patch is under review. Do not re-run the bridge script
+as a guard test in the live instance.
+
+The fresh three-track tab then passed one guarded installed
+`studio.replace_stem` call. The handler accepted the same-length 440 Hz Drums
+media while transport was stopped. An independent file-drop read with the same
+session token confirmed the new hash-addressed source, unchanged item/take
+GUIDs and geometry, exact silent Bass gain/pan/ReaEQ, and unchanged Keys
+envelope. Evidence:
+`/private/tmp/llm-studio-reaper/issue11-owner-4yhg_yj8/installed-a4-evidence.json`
+(`ok: true`, `replace_call_count: 1`). A guarded native script saved only that
+unique target tab. Its disk RPP SHA256 became
+`90c44753ee58367f36f90418f968f9bebc9fa393b1876150745b886696a3cc44`
+and records Bass `VOLPAN 0 -0.2`, the Keys point at two seconds `0.0419846`,
+and the accepted Drums media path. The tab still reported dirty after
+`Main_SaveProjectEx`; no claim that REAPER marked it clean is made.
+
+A byte-identical saved RPP was opened in a new tab. Native readback proved all
+three track/item/take GUIDs, each five-second item, the accepted Drums source,
+silent Bass with ReaEQ and pan, and the Keys lane. The reopened tab was clean;
+both earlier isolated tabs retained their prior dirty states. Evidence:
+`/private/tmp/llm-studio-reaper/issue11-owner-4yhg_yj8/reopen-proof.txt`.
+Headless rendering directly from this saved and reopened RPP produced a stereo
+mix and three aligned part exports: 220,500 frames at 44.1 kHz, zero Bass
+samples, audible Keys automation (early/mid/late RMS 219,019.58/4,954.10/
+249,806.71), a strong 440 Hz Drums component, and at most one 24-bit sample
+of mix/stem error (RMS ratio `7.21e-7`). Evidence:
+`/private/tmp/llm-studio-reaper/issue11-live-saved-export-6m79wokj/mix-evidence.json`
+and `/private/tmp/llm-studio-reaper/gate-a4-stems-nye0xhlr/audio-evidence.json`.
+This is a deterministic signal check, not a human listening judgement. The
+fixture configures no extra tail, so it does not qualify nonzero FX tails.
+
 ## Gate A capability matrix
 
 Statuses refer to the stated evidence scope; copy-based qualification does not
@@ -183,30 +232,26 @@ by itself establish the complete producer workflow.
 | SPEC ID | Capability | Status and evidence |
 |---|---|---|
 | A01 | Core tracer through APIs/protocols without GUI automation | **Partial.** A3 automation and A4 replacement/export used native APIs, ReaScript, file-drop transport, or CLI on disposable copies. This slice has not completed the full core tracer while another application has keyboard focus. |
-| A02 | Manual Bass gain survives generation and accepted drum replacement | **Partial.** John's fader move was observed and saved in a disposable handoff RPP. The separate installed replacement preserved exact silent Bass gain, pan, and ReaEQ in native post-state. Save/reopen of that replacement is pending. |
-| A03 | Manual Keys envelope survives unrelated edits, restart and export | **Prior A3 evidence.** The issue #10 qualification records John's manual Keys points, byte-identical copy, unrelated edits, save/reopen, and audible export. A4 also preserved the copied Keys envelope through Drums replacement and export. The final Bass-dependent A4 workflow is still pending. |
+| A02 | Manual Bass gain survives generation and accepted drum replacement | **Passed for the disposable A4 copy.** John's fader move was observed and saved. The installed replacement preserved exact silent Bass gain, pan, and ReaEQ through independent readback, native save, and reopen. The broader producer workflow is unqualified. |
+| A03 | Manual Keys envelope survives unrelated edits, restart and export | **Prior A3 evidence plus disposable A4 pass.** The issue #10 qualification records John's manual Keys points, byte-identical copy, unrelated edits, save/reopen, and audible export. A4 preserved the earlier copied Keys lane through installed Drums replacement, save/reopen, and aligned export. The later `a3-probe` point was not recovered. |
 | A04 | Overlapping edit blocks stale proposal without overwriting points | **Prior A3 evidence.** The corrected producer-edit run returned `CONFLICT` and preserved John's edited envelope chunk exactly. Earlier programmatic conflict checks also passed. |
 | A05 | Envelope range boundaries and outside points are preserved | **Partial, prior A3 evidence.** Native bounded patch and export checks preserved points outside the edited interval and the right endpoint shape; injected-host checks cover additional boundary cases. No complete Gate A envelope scenario is claimed. |
 | A06 | Automation modes are observed without hidden mode changes | **Partial, prior A3 evidence.** Static gain writes were refused across six native automation modes, and mode/transport/global override refusals have injected-host coverage. Distinct mode observation and end-to-end no-mode-change acceptance remain unqualified. |
 | A14 | Pending writes cannot target a newly opened session | **Prior controller evidence, bounded.** The #9 environment report records switch-away-and-back rejection of an old session token. The token is callback-observed and does not guarantee detection of a switch entirely between callbacks; this does not qualify the A4 replacement path through installed transport. |
 | A15 | Revert preserves later human work or refuses unsafe global undo | **Partial, prior A3 evidence.** Checked envelope-only recovery restored the target and refused after an unrelated track edit; the unsafe global Undo path was removed. A recovery-after-human-edit case is not recorded. |
-| A18 | Export includes accepted takes and audible manual automation with correct duration/tails | **Prior copy-based evidence passes for this zero-extra-tail fixture.** A4 rendered the earlier reopened, replaced-take project at five seconds; aligned stems reproduced the mix and the Keys envelope was audible. Export after John's Bass move and the new installed replacement is pending. Nonzero tails are unqualified, and the historical 45-second renderer timeout remains unexplained. |
+| A18 | Export includes accepted takes and audible manual automation with correct duration/tails | **Passed for the disposable zero-extra-tail fixture.** The native-saved and reopened installed replacement rendered at five seconds; aligned stems reproduced the mix, Bass was silent, the Keys envelope was audible, and Drums used the accepted source. Nonzero tails are unqualified, and the historical 45-second renderer timeout remains unexplained. |
 
-The installed replacement returned success and its native post-state matches,
-but duplicate bridge handlers prevent a reliable single-owner transport
-qualification. The new replacement's save/reopen/export check remains pending.
-A4's bounded renders show the old renderer timeout did not reproduce
+The new installed replacement, save/reopen, and export checks passed with one
+stable bridge owner. Bridge relaunch remains unreliable pending the lifecycle
+fix and live requalification. A4's bounded renders show the old renderer timeout did not reproduce
 in these attempts; they do not explain or resolve that reliability failure.
 
 ## Remaining acceptance
 
-1. Resolve duplicate bridge-handler ownership in the isolated profile, then
-   requalify single-owner request/reply behavior without repeating the already
-   accepted replacement on the dirty tab.
-2. Save/reopen the isolated replacement only after its native guarded save can
-   run, then verify exact Bass gain, Keys envelope, FX, media references, and
-   aligned audible export. Keep the earlier tabs intact.
-3. Do not replace a script in the running producer profile.
-4. Review the implementation and full Gate A capability matrix, then make an
+1. Fix bridge relaunch so a second invocation claims ownership without losing
+   the daemon. Requalify its lifecycle in a separate disposable profile. Never
+   repeat the accepted replacement on an already changed tab.
+2. Do not replace a script in the running producer profile.
+3. Review the full Gate A capability matrix, then make an
    honest go/no-go decision. Keep the historical renderer timeout as unresolved
    unless a bounded reproduction explains it.

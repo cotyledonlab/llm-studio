@@ -1,5 +1,55 @@
 # Current handoff — issue #11 draft, live checks pending
 
+## 2026-09-23 after audio-device selection
+
+John selected an audio device in the new licensed instance at
+`/private/tmp/llm-studio-reaper/issue11-owner-4yhg_yj8/`; no license dialog
+appeared. The deferred probe gained `deferred=pass`, the installed bridge
+heartbeat appeared, and four snapshots shared one token. The startup tab then
+contained six in-memory tracks despite its three-track saved RPP. It was left
+clean and untouched. A new uniquely named saved-manual-copy tab
+`session-owner-qualified.RPP` opened with exactly three tracks; native tab
+enumeration confirmed one selected target path, stopped transport, and the old
+six-track tab unchanged.
+
+Re-running the same installed bridge ReaScript stopped its replies. Native
+ExtState inspection found its heartbeat stale. Sol reviewed this as consistent
+with REAPER terminating the old running script before the new invocation
+returns on the fresh-heartbeat startup guard. After the beat aged, one bridge
+launch restored a stable token. A Luna child is implementing Sol's lifecycle
+fix: every invocation claims a fresh owner token, and conditional `atexit`
+cleanup must not clear a successor's ownership. Do not launch the current
+bridge script a second time in a live instance just to test the guard.
+
+With one stable owner and a fresh native tab proof, the guarded installed A4
+helper made **one** Drums replacement in `session-owner-qualified.RPP` and
+returned `ok: true`. Independent file-drop readback used the same token and
+confirmed new media path, track/item/take binding and five-second geometry,
+silent Bass with pan/ReaEQ, and unchanged Keys envelope. Evidence:
+`/private/tmp/llm-studio-reaper/issue11-owner-4yhg_yj8/installed-a4-evidence.json`.
+A guarded native save changed that RPP's SHA256 to
+`90c44753ee58367f36f90418f968f9bebc9fa393b1876150745b886696a3cc44`
+and serialized the new Drums path, Bass `VOLPAN 0 -0.2`, and Keys point
+`PT 2 0.0419846`. The source tab still reported dirty after
+`Main_SaveProjectEx`; preserve it.
+
+A byte-identical saved RPP was opened in `session-owner-reopened.RPP`. Native
+readback proved a clean three-track reopened tab with all original track,
+item, and take GUIDs, exact Bass gain/pan/ReaEQ, the Keys lane, and the
+accepted Drums source. The older startup tab remained clean and the qualified
+source tab remained dirty. Evidence:
+`/private/tmp/llm-studio-reaper/issue11-owner-4yhg_yj8/reopen-proof.txt`.
+Headless mix and three-stem renders from the saved reopened RPP passed 220,500
+aligned frames at 44.1 kHz, silent Bass, audible Keys automation, strong 440 Hz
+Drums, and one-LSB maximum mix/stem error. Evidence:
+`/private/tmp/llm-studio-reaper/issue11-live-saved-export-6m79wokj/mix-evidence.json`
+and `/private/tmp/llm-studio-reaper/gate-a4-stems-nye0xhlr/audio-evidence.json`.
+These are test tones, not human listening judgement. The zero-extra-tail
+fixture and old renderer timeout limits remain. Gate A still has partial
+capabilities; keep PR #37 draft and issue #11 open. Next: finish Sol review and
+tests for the lifecycle patch, then requalify relaunch behavior on a separate
+disposable profile without touching the accepted replacement tabs.
+
 ## 2026-09-23 latest continuation
 
 John confirmed he moved the Bass fader in the uniquely named original-profile
