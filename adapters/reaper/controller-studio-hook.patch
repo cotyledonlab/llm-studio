@@ -1,13 +1,28 @@
 --- a/bridge/agent_bridge.lua
 +++ b/bridge/agent_bridge.lua
-@@ -185,1 +185,5 @@
- if os.time() - last_ext < 15 then return end
-+-- Claim this process-local generation before deferring. A successor may take
-+-- over after a stale beat; older callbacks then stop before scanning requests.
+@@ -181,7 +181,13 @@
+-
++
+--- single-instance guard: a live sibling refreshes this extstate every beat.
+--- (v1 daemon has no guard, so upgrading from v1 needs a REAPER restart.)
+-local last_ext = tonumber(reaper.GetExtState('agent_bridge', 'heartbeat') or '0') or 0
+-if os.time() - last_ext < 15 then return end
++-- Each invocation claims the process-local owner generation immediately.
 +local owner_token = reaper.genGuid()
 +reaper.SetExtState('agent_bridge', 'owner', owner_token, false)
 +reaper.SetExtState('agent_bridge', 'heartbeat', tostring(os.time()), false)
-@@ -219,4 +223,11 @@
++local function release_owner()
++  if reaper.GetExtState('agent_bridge', 'owner') ~= owner_token then return end
++  reaper.SetExtState('agent_bridge', 'owner', '', false)
++  reaper.SetExtState('agent_bridge', 'heartbeat', tostring(os.time() - 16), false)
++end
++reaper.atexit(release_owner)
+-
++
+ local function read_file(p)
+@@ -218,2 +224,9 @@
+-
++
 +-- LLM Studio extension: one handler in the existing serialized daemon.
 +local studio_handler = nil
 +local studio_loaded, studio_module = pcall(dofile, RES .. '/Scripts/llm_studio_reaper.lua')
@@ -16,19 +31,12 @@
 +end
 +
  local function handle(op_id, req)
-   if type(req) ~= 'table' then reply_err(op_id, 'BAD_REQUEST', 'unparseable JSON'); return end
-   if req.v ~= 1 then reply_err(op_id, 'BAD_VERSION', 'expected v=1'); return end
-   if req.op_id ~= op_id then reply_err(op_id, 'ID_MISMATCH', 'filename/op_id differ'); return end
-@@ -514,6 +525,8 @@
-     if path == '' then reply_err(op_id, 'BAD_REQUEST', 'path required'); return end
-     reaper.Main_SaveProjectEx(0, path, 0)
+@@ -516,2 +529,4 @@
      reply_ok(op_id, { path = path }, { 'op:project.save' })
 +  elseif studio_handler and studio_handler.handle(op_id, req, reply_ok, reply_err) then
 +    return
    else
-     reply_err(op_id, 'UNKNOWN_OP', 'no such op: ' .. tostring(op))
-   end
-@@ -524,5 +537,9 @@
+@@ -524,3 +539,7 @@
  local function tick()
 +  if reaper.GetExtState('agent_bridge', 'owner') ~= owner_token then return end
    local now = reaper.time_precise()
@@ -36,5 +44,8 @@
 +    studio_handler.observe_session()
 +  end
    if now - last_scan >= 0.1 then
-     last_scan = now
-     local i, guard = 0, 0
+@@ -552,3 +571,3 @@
+   end
+-  if SHUTDOWN then return end
++  if SHUTDOWN then release_owner(); return end
+   reaper.defer(tick)

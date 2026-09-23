@@ -7,15 +7,18 @@ and evidence below.
 
 The external controller is pinned in `controller-pin.json`. Its file-drop
 transport, OSC resources and renderer remain upstream. `controller-studio-hook.patch`
-is an exact patch against that commit: it reserves the existing daemon heartbeat
-before the first deferred tick, loads `studio_handler.lua` into that daemon,
-routes bounded `studio.*` operations and observes session changes during daemon
-ticks. The early reservation prevents two serial startup invocations from both
-passing the stale-heartbeat check. Each deferred tick checks its captured
-process-local generation before scanning the request queue, so a delayed old
-loop stops after a successor takes over. The usual 15-second heartbeat expiry
-remains the recovery path if a daemon stops unexpectedly. This ownership guard
-does not coordinate separate REAPER processes that share one resource directory.
+is an exact patch against that commit. It loads `studio_handler.lua` into that
+daemon, routes bounded `studio.*` operations and observes session changes during
+daemon ticks. Every invocation claims a fresh process-local owner generation
+and queues its deferred loop, including an immediate rerun while the prior
+heartbeat is fresh. Old callbacks check ownership before scanning. Conditional,
+idempotent exit cleanup clears the owner and marks the ExtState heartbeat stale
+only while that callback still owns it. Explicit shutdown uses the same cleanup,
+so a restart can claim immediately. Cleanup does not touch the on-disk heartbeat
+file; status based on that file's modification time can still report alive for
+up to 15 seconds. The generation coordinates invocations within one REAPER
+process sharing one resource directory; it does not coordinate separate REAPER
+processes that share the directory.
 No generic bridge code is copied into this repo.
 
 The controller's declared MIT licence has no accompanying copyright notice at

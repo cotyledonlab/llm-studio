@@ -212,36 +212,30 @@ def test_ini_section_and_unknown_process_status():
     assert bootstrap._agent_ini(existing) == existing
 
 
-def test_studio_hook_reserves_bridge_heartbeat_before_starting_deferred_loop():
-    """The startup claim precedes setup and the daemon callback checks its owner."""
+def test_studio_hook_claims_each_invocation_and_cleans_up_conditionally():
+    """The startup claim supersedes old loops; cleanup is safe after takeover."""
     import re
-    import llm_studio.bootstrap as bootstrap
-
     patch_text = (Path(__file__).parents[1] / 'adapters/reaper/controller-studio-hook.patch').read_text()
-    match = re.search(r'(?ms)^@@ -185,1 \+185,5 @@\n(.*?)(?=^@@ |\Z)', patch_text)
-    assert match, 'studio hook must patch the pinned heartbeat guard'
-    hunk = ('@@ -185,1 +185,5 @@\n' + match.group(1)).encode()
-    original = ('\n' * 184
-                + "if os.time() - last_ext < 15 then return end\n\n"
-                + 'local function read_file(p) end\n'
-                + 'reaper.defer(tick)\n').encode()
-
-    installed = bootstrap._apply_unified_patch(original, hunk).decode()
-    stale_check = installed.index("if os.time() - last_ext < 15 then return end")
+    match = re.search(r'(?ms)^@@ -\d+,\d+ \+\d+,\d+ @@\n(.*?)(?=^@@ |\Z)', patch_text)
+    assert match, 'studio hook must replace the pinned heartbeat startup gate'
+    installed = match.group(1)
     owner_claim = installed.index("reaper.SetExtState('agent_bridge', 'owner', owner_token, false)")
-    reservation = installed.index("reaper.SetExtState('agent_bridge', 'heartbeat', tostring(os.time()), false)")
-    next_definition = installed.index('local function read_file(p)')
-    deferred_loop = installed.index('reaper.defer(tick)')
-    assert stale_check < owner_claim < reservation < next_definition < deferred_loop
-    assert "if reaper.GetExtState('agent_bridge', 'owner') ~= owner_token then return end" in patch_text
+    heartbeat = installed.index("reaper.SetExtState('agent_bridge', 'heartbeat', tostring(os.time()), false)")
+    exit_registration = installed.index('reaper.atexit(release_owner)')
+    cleanup_guard = installed.index("if reaper.GetExtState('agent_bridge', 'owner') ~= owner_token then return end")
+    owner_guards = [line for line in patch_text.splitlines() if "if reaper.GetExtState('agent_bridge', 'owner') ~= owner_token then return end" in line]
+    assert '-if os.time() - last_ext < 15 then return end' in patch_text
+    assert owner_claim < heartbeat < cleanup_guard < exit_registration
+    assert len(owner_guards) == 2 and owner_guards[0].startswith('+') and owner_guards[1].startswith('+')
+    assert "reaper.SetExtState('agent_bridge', 'heartbeat', tostring(os.time() - 16), false)" in installed
 
 
 @pytest.mark.skipif(
     not os.environ.get('REAPER_CONTROLLER_CHECKOUT') or not shutil.which('lua'),
     reason='set REAPER_CONTROLLER_CHECKOUT and install Lua for the mocked daemon test',
 )
-def test_stalled_daemon_cannot_scan_after_stale_owner_takeover(tmp_path):
-    """A replacement generation makes a delayed callback inert before queue scan."""
+def test_studio_hook_immediate_rerun_shutdown_and_late_atexit(tmp_path):
+    """Mocked host covers rerun, shutdown restart and successor-safe cleanup."""
     from llm_studio.bootstrap import _apply_unified_patch
 
     controller_path = Path(os.environ['REAPER_CONTROLLER_CHECKOUT'])
@@ -251,9 +245,11 @@ def test_stalled_daemon_cannot_scan_after_stale_owner_takeover(tmp_path):
     installed.write_bytes(_apply_unified_patch(base_bridge, hook))
     resource = tmp_path / 'resource'
     (resource / 'AgentBridge/log').mkdir(parents=True)
+    (resource / 'AgentBridge/in').mkdir()
+    (resource / 'AgentBridge/out').mkdir()
     harness = tmp_path / 'mock_reaper.lua'
     harness.write_text(f'''\
-local states, callbacks, guid, scans = {{}}, {{}}, 0, 0
+local states, callbacks, exits, guid, scans = {{}}, {{}}, {{}}, 0, 0
 local resource = {json.dumps(str(resource))}
 reaper = {{
   GetResourcePath = function() return resource end,
@@ -261,25 +257,50 @@ reaper = {{
   GetExtState = function(_, key) return states[key] or '' end,
   SetExtState = function(_, key, value) states[key] = value end,
   genGuid = function() guid = guid + 1; return 'generation-' .. guid end,
+  atexit = function(fn) exits[#exits + 1] = fn end,
   defer = function(fn) callbacks[#callbacks + 1] = fn end,
   time_precise = function() return 1 end,
-  EnumerateFiles = function() scans = scans + 1; return nil end,
+  EnumerateFiles = function(_, index)
+    scans = scans + 1
+    if index == 0 then
+      local f = io.open(resource .. '/AgentBridge/in/stop.json', 'r')
+      if f then f:close(); return 'stop.json' end
+    end
+    return nil
+  end,
 }}
 local script = {json.dumps(str(installed))}
 dofile(script)
 assert(#callbacks == 1)
-local old_owner = states.owner
-states.heartbeat = tostring(os.time() - 16)
+local first_owner = states.owner
+local first_exit = exits[1]
+assert(states.heartbeat == tostring(os.time()))
 dofile(script)
-assert(#callbacks == 2 and states.owner ~= old_owner)
+local second_owner = states.owner
+assert(#callbacks == 2 and second_owner ~= first_owner, 'fresh heartbeat suppressed immediate rerun')
+first_exit()
+assert(states.owner == second_owner and states.heartbeat == tostring(os.time()), 'old exit cleared successor state')
 callbacks[1]()
-assert(scans == 0, 'stalled generation scanned after takeover')
+assert(scans == 0, 'superseded generation scanned after takeover')
 callbacks[2]()
-assert(scans == 1, 'current generation did not scan')
-local claimed_owner = states.owner
+assert(scans >= 1, 'current generation did not scan')
+exits[2]()
+local stale_beat = tonumber(states.heartbeat)
+assert(states.owner == '' and stale_beat <= os.time() - 15, 'owner exit did not stale heartbeat')
+exits[2]()
+assert(states.owner == '' and tonumber(states.heartbeat) == stale_beat, 'cleanup was not idempotent')
+local input = io.open(resource .. '/AgentBridge/in/stop.json', 'w')
+input:write('{{"v":1,"op_id":"stop","op":"bridge.shutdown"}}')
+input:close()
 dofile(script)
-assert(states.owner == claimed_owner, 'fresh sibling unexpectedly claimed ownership')
-assert(#callbacks == 3)
+local shutdown_owner = states.owner
+callbacks[4]()
+assert(states.owner == '' and tonumber(states.heartbeat) <= os.time() - 15, 'explicit shutdown did not release owner')
+dofile(script)
+local restarted_owner = states.owner
+assert(restarted_owner ~= shutdown_owner and #callbacks == 5, 'shutdown restart did not claim a new generation')
+exits[3]()
+assert(states.owner == restarted_owner, 'late shutdown atexit cleared restarted owner')
 ''')
     subprocess.run([shutil.which('lua'), str(harness)], check=True, capture_output=True, text=True)
 
