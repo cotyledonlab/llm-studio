@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import json
 import struct
+from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
 
 from llm_studio.catalogue import Catalogue
+from llm_studio.render_jobs import RenderJob, ResourceLimits
 from tools.qualification import catalogue_audition as audition
 from tools.qualification.catalogue_audition import (
     midi_schedule,
@@ -127,10 +130,81 @@ class MockCatalogue:
         assert instrument_id == self.instrument.id
         return self.instrument
 
+    def get(self, instrument_id: str):
+        assert instrument_id == self.instrument.id
+        return self.instrument
+
 
 def successful_mock_render(instrument, output: Path):
     output.write_bytes(b"mock float WAV")
     return ({"sample_rate": 48000, "channels": 2, "frames": 1}, {"mock": "1"})
+
+
+def catalogue_render_job(instrument, result: Path) -> RenderJob:
+    fixture = instrument.fixture
+    return RenderJob(
+        job_id="catalogue-qualification",
+        arrangement_revision="native-qualification-1",
+        performance_hash=instrument.data["audition_fixture_sha256"],
+        backend_version=instrument.data["backend"]["version"],
+        instrument_state_hash=instrument.data["state_sha256"],
+        sample_rate=fixture["sample_rate"],
+        channel_layout="stereo",
+        start_position_s=fixture["start_s"],
+        end_position_s=fixture["start_s"] + fixture["duration_s"],
+        preroll_s=0,
+        tail_s=fixture["tail_s"],
+        deterministic_seed=instrument.data["state"].get("seed"),
+        limits=ResourceLimits(),
+        deadline_at=datetime.now(timezone.utc) + timedelta(minutes=1),
+        result_path=result,
+        payload={"instrument_id": instrument.id},
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("performance_hash", "different-performance"),
+        ("instrument_state_hash", "different-state"),
+        ("backend_version", "different-backend"),
+        ("sample_rate", 44100),
+        ("channel_layout", "mono"),
+        ("start_position_s", 0.5),
+        ("end_position_s", 3.0),
+        ("tail_s", 1.0),
+        ("preroll_s", 0.25),
+        ("deterministic_seed", 7),
+    ],
+)
+def test_render_job_rejects_envelope_that_differs_from_packaged_fixture(
+    tmp_path, monkeypatch, field, value
+) -> None:
+    instrument = mock_instrument()
+    monkeypatch.setattr(audition.Catalogue, "packaged", lambda: MockCatalogue(instrument))
+    monkeypatch.setattr(
+        audition,
+        "render",
+        lambda *args, **kwargs: pytest.fail("mismatched job reached renderer"),
+    )
+    job = replace(catalogue_render_job(instrument, tmp_path / "result"), **{field: value})
+
+    with pytest.raises(ValueError, match=field):
+        audition.render_job(job, tmp_path / "worker-output")
+
+
+def test_render_job_accepts_native_qualification_envelope(tmp_path, monkeypatch) -> None:
+    instrument = mock_instrument()
+    monkeypatch.setattr(audition.Catalogue, "packaged", lambda: MockCatalogue(instrument))
+    calls = []
+    monkeypatch.setattr(audition, "render", lambda *args, **kwargs: calls.append((args, kwargs)))
+    job = catalogue_render_job(instrument, tmp_path / "result")
+
+    audition.render_job(job, tmp_path / "worker-output")
+
+    assert calls == [
+        ((instrument.id, tmp_path / "worker-output"), {"published_result": job.result_path})
+    ]
 
 
 def test_result_directory_is_published_as_one_immutable_unit(tmp_path, monkeypatch) -> None:

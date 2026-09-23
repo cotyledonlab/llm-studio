@@ -430,11 +430,40 @@ def render(
 
 
 def render_job(job: RenderJob, output: Path) -> None:
-    """Render a catalogue audition for parent-owned job publication."""
+    """Render a matching packaged audition for parent-owned publication.
+
+    This qualification adapter renders the complete packaged phrase. Its jobs
+    therefore use the fixture's exact timeline and tail, with zero separate
+    preroll; the fixture's start time already supplies the leading silence.
+    """
 
     instrument_id = job.payload.get("instrument_id")
     if not isinstance(instrument_id, str) or not instrument_id:
         raise ValueError("catalogue render job payload requires instrument_id")
+    instrument = Catalogue.packaged().get(instrument_id)
+    fixture = instrument.fixture
+    expected = {
+        "performance_hash": instrument.data["audition_fixture_sha256"],
+        "instrument_state_hash": instrument.data["state_sha256"],
+        "backend_version": instrument.data["backend"]["version"],
+        "sample_rate": fixture["sample_rate"],
+        "channel_layout": "stereo" if instrument.data["render"]["channels"] == 2 else "mono",
+        "start_position_s": fixture["start_s"],
+        "end_position_s": fixture["start_s"] + fixture["duration_s"],
+        "preroll_s": 0,
+        "tail_s": fixture["tail_s"],
+        "deterministic_seed": instrument.data["state"].get("seed"),
+    }
+    mismatches = [
+        f"{name}: expected {value!r}, found {getattr(job, name)!r}"
+        for name, value in expected.items()
+        if getattr(job, name) != value
+    ]
+    if mismatches:
+        raise ValueError(
+            f"catalogue render job does not match packaged fixture {instrument_id}: "
+            + "; ".join(mismatches)
+        )
     render(
         instrument_id,
         output,
