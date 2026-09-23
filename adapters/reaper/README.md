@@ -26,12 +26,23 @@ PYTHONPATH=src python3 -m llm_studio bootstrap-plan \
   --controller /absolute/reaper-controller \
   --output /absolute/reviewed-plan.json
 
-# Review the reported files/hashes. Stop REAPER before applying.
+# Review the reported files/hashes. The default apply refuses while any
+# REAPER process is running.
 PYTHONPATH=src python3 -m llm_studio bootstrap-apply \
   /absolute/reviewed-plan.json --receipt /absolute/setup-receipt.json
 PYTHONPATH=src python3 -m llm_studio bootstrap-verify /absolute/setup-receipt.json
 PYTHONPATH=src python3 -m llm_studio bootstrap-rollback /absolute/setup-receipt.json
 ```
+
+For a newly created **empty** disposable resource under
+`/private/tmp/llm-studio-reaper/`, apply may use
+`--isolated-empty-profile`. This opt-in still refuses symlinked paths, any
+pre-existing resource contents or planned target files, and any uncertain
+process probe. It runs fresh `pgrep` and `ps` checks and proceeds only when no
+REAPER argv names that resource's exact `reaper.ini`; the default global stop
+guard remains in effect for every other apply. This exception is limited to
+initial file installation in the new profile. Rollback always requires all
+REAPER processes stopped and never uses the isolated-profile exception.
 
 Plans capture exact file bytes and prior hashes. Apply checks the controller
 pin, rejects stale targets and unsafe process detection, and backs up touched

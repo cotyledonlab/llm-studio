@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 import subprocess
 from pathlib import Path
 
@@ -217,3 +218,135 @@ def test_broken_symlink_never_written(tmp_path, monkeypatch):
     (resource / 'Scripts/agent_bridge.lua').symlink_to(tmp_path / 'missing')
     with pytest.raises(UnsafeBootstrap, match='symlink'):
         plan_bootstrap(resource, root, tmp_path / 'no-extension')
+
+
+def test_isolated_empty_profile_process_guard_matching_unrelated_and_unknown(tmp_path, monkeypatch):
+    import llm_studio.bootstrap as bootstrap
+    resource = tmp_path / 'new-resource'
+    resource.mkdir()
+    monkeypatch.setattr(bootstrap, 'ISOLATED_PROFILE_ROOT', tmp_path)
+    expected = str(resource / 'reaper.ini')
+
+    def probe_for(pgrep_result, ps_result):
+        results = iter((pgrep_result, ps_result))
+        calls = []
+        def run(*args, **kwargs):
+            calls.append(args[0])
+            return next(results)
+        monkeypatch.setattr(bootstrap.subprocess, 'run', run)
+        return calls
+
+    calls = probe_for(subprocess.CompletedProcess([], 0, '123\n', ''),
+                      subprocess.CompletedProcess([], 0, f'123 /Applications/REAPER.app/Contents/MacOS/REAPER -cfgfile {expected} project.RPP\n', ''))
+    assert bootstrap.isolated_profile_running(resource)
+    assert calls[1] == ['ps', '-ww', '-axo', 'pid=,command=']
+
+    probe_for(subprocess.CompletedProcess([], 0, '123\n', ''),
+              subprocess.CompletedProcess([], 0, '123 /Applications/REAPER.app/Contents/MacOS/REAPER -cfgfile /tmp/other/reaper.ini project.RPP\n', ''))
+    assert not bootstrap.isolated_profile_running(resource)
+
+    probe_for(subprocess.CompletedProcess([], 3, '', 'permission denied'),
+              subprocess.CompletedProcess([], 0, '', ''))
+    with pytest.raises(UnsafeBootstrap, match='probe returned status 3'):
+        bootstrap.isolated_profile_running(resource)
+
+
+@pytest.mark.parametrize('command, message', [
+    ('/Applications/REAPER.app/Contents/MacOS/REAPER project.RPP', 'exactly one'),
+    ('/Applications/REAPER.app/Contents/MacOS/REAPER -cfgfile /tmp/a.ini -cfgfile /tmp/b.ini', 'exactly one'),
+    ('/Applications/REAPER.app/Contents/MacOS/REAPER -cfgfile relative.ini', 'relative'),
+    ('/Applications/REAPER.app/Contents/MacOS/REAPER -cfgfile', 'incomplete'),
+    ('/Applications/REAPER.app/Contents/MacOS/REAPER -cfgfile=', 'incomplete'),
+    ('/Applications/REAPER.app/Contents/MacOS/REAPER "-cfgfile /tmp/a.ini', 'malformed argv'),
+])
+def test_isolated_process_guard_rejects_unrecognized_reaper_argv(tmp_path, monkeypatch, command, message):
+    import llm_studio.bootstrap as bootstrap
+    resource = tmp_path / 'new-resource'
+    resource.mkdir()
+    monkeypatch.setattr(bootstrap, 'ISOLATED_PROFILE_ROOT', tmp_path)
+    results = iter((
+        subprocess.CompletedProcess([], 0, '123\n', ''),
+        subprocess.CompletedProcess([], 0, f'123 {command}\n', ''),
+    ))
+    monkeypatch.setattr(bootstrap.subprocess, 'run', lambda *a, **k: next(results))
+    with pytest.raises(UnsafeBootstrap, match=message):
+        bootstrap.isolated_profile_running(resource)
+
+
+def test_isolated_apply_accepts_distinct_profile_and_saves_receipt(tmp_path, monkeypatch):
+    import llm_studio.bootstrap as bootstrap
+    root = controller(tmp_path)
+    pin(monkeypatch, root)
+    allowed = tmp_path / 'allowed'
+    allowed.mkdir()
+    monkeypatch.setattr(bootstrap, 'ISOLATED_PROFILE_ROOT', allowed)
+    resource = allowed / 'new-resource'
+    resource.mkdir()
+    plan = plan_bootstrap(resource, root, tmp_path / 'no-extension')
+    argv = '/Applications/REAPER.app/Contents/MacOS/REAPER -cfgfile /private/tmp/llm-studio-reaper/a3-probe/profile/reaper.ini project.RPP'
+    results = iter((
+        subprocess.CompletedProcess([], 0, '123\n', ''),
+        subprocess.CompletedProcess([], 0, f'123 {argv}\n', ''),
+    ))
+    real_run = bootstrap.subprocess.run
+    def run_probe(args, **kwargs):
+        return next(results) if args[0] in {'pgrep', 'ps'} else real_run(args, **kwargs)
+    monkeypatch.setattr(bootstrap.subprocess, 'run', run_probe)
+
+    result = apply(plan, isolated_empty_profile=True)
+    receipt = tmp_path / 'isolated-receipt.json'
+    save_result(result, receipt)
+    assert verify(load_result(receipt))['ok']
+    assert set(result.changed) == {item.relative_path for item in plan.files}
+    assert receipt.is_file()
+
+
+def test_isolated_apply_refuses_exact_profile_before_target_writes(tmp_path, monkeypatch):
+    import llm_studio.bootstrap as bootstrap
+    root = controller(tmp_path)
+    pin(monkeypatch, root)
+    allowed = tmp_path / 'allowed'
+    allowed.mkdir()
+    monkeypatch.setattr(bootstrap, 'ISOLATED_PROFILE_ROOT', allowed)
+    resource = allowed / 'new-resource'
+    resource.mkdir()
+    plan = plan_bootstrap(resource, root, tmp_path / 'no-extension')
+    cfg = shlex.quote(str(resource / 'reaper.ini'))
+    results = iter((
+        subprocess.CompletedProcess([], 0, '123\n', ''),
+        subprocess.CompletedProcess([], 0, f'123 /Applications/REAPER.app/Contents/MacOS/REAPER -cfgfile {cfg} project.RPP\n', ''),
+    ))
+    real_run = bootstrap.subprocess.run
+    def run_probe(args, **kwargs):
+        return next(results) if args[0] in {'pgrep', 'ps'} else real_run(args, **kwargs)
+    monkeypatch.setattr(bootstrap.subprocess, 'run', run_probe)
+    with pytest.raises(UnsafeBootstrap, match='using the isolated profile'):
+        apply(plan, isolated_empty_profile=True)
+    assert list(resource.iterdir()) == []
+
+
+def test_isolated_apply_refuses_nonempty_and_symlinked_resource(tmp_path, monkeypatch):
+    import llm_studio.bootstrap as bootstrap
+    root = controller(tmp_path)
+    pin(monkeypatch, root)
+    allowed = tmp_path / 'allowed'
+    allowed.mkdir()
+    monkeypatch.setattr(bootstrap, 'ISOLATED_PROFILE_ROOT', allowed)
+    resource = allowed / 'empty-resource'
+    resource.mkdir()
+    plan = plan_bootstrap(resource, root, tmp_path / 'no-extension')
+    (resource / 'unexpected').write_text('leave intact')
+    with pytest.raises(UnsafeBootstrap, match='must be empty'):
+        apply(plan, isolated_empty_profile=True)
+    assert (resource / 'unexpected').read_text() == 'leave intact'
+
+    (resource / 'unexpected').unlink()
+    actual_parent = allowed / 'actual-parent'
+    actual_parent.mkdir()
+    (actual_parent / 'empty-resource').mkdir()
+    link_parent = allowed / 'linked-parent'
+    link_parent.symlink_to(actual_parent, target_is_directory=True)
+    linked = link_parent / 'empty-resource'
+    linked_plan = plan_bootstrap(linked, root, tmp_path / 'no-extension')
+    with pytest.raises(UnsafeBootstrap, match='contains symlink'):
+        apply(linked_plan, isolated_empty_profile=True)
