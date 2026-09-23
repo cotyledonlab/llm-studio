@@ -7,9 +7,16 @@ and evidence below.
 
 The external controller is pinned in `controller-pin.json`. Its file-drop
 transport, OSC resources and renderer remain upstream. `controller-studio-hook.patch`
-is an exact patch against that commit: it loads `studio_handler.lua` into the
-existing daemon, routes bounded `studio.*` operations and observes session
-changes during daemon ticks. No generic bridge code is copied into this repo.
+is an exact patch against that commit: it reserves the existing daemon heartbeat
+before the first deferred tick, loads `studio_handler.lua` into that daemon,
+routes bounded `studio.*` operations and observes session changes during daemon
+ticks. The early reservation prevents two serial startup invocations from both
+passing the stale-heartbeat check. Each deferred tick checks its captured
+process-local generation before scanning the request queue, so a delayed old
+loop stops after a successor takes over. The usual 15-second heartbeat expiry
+remains the recovery path if a daemon stops unexpectedly. This ownership guard
+does not coordinate separate REAPER processes that share one resource directory.
+No generic bridge code is copied into this repo.
 
 The controller's declared MIT licence has no accompanying copyright notice at
 this pin. Resolve that and this repository's outgoing licence before distribution.

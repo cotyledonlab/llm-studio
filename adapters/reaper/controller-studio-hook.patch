@@ -1,6 +1,13 @@
 --- a/bridge/agent_bridge.lua
 +++ b/bridge/agent_bridge.lua
-@@ -219,4 +219,11 @@
+@@ -185,1 +185,5 @@
+ if os.time() - last_ext < 15 then return end
++-- Claim this process-local generation before deferring. A successor may take
++-- over after a stale beat; older callbacks then stop before scanning requests.
++local owner_token = reaper.genGuid()
++reaper.SetExtState('agent_bridge', 'owner', owner_token, false)
++reaper.SetExtState('agent_bridge', 'heartbeat', tostring(os.time()), false)
+@@ -219,4 +223,11 @@
 +-- LLM Studio extension: one handler in the existing serialized daemon.
 +local studio_handler = nil
 +local studio_loaded, studio_module = pcall(dofile, RES .. '/Scripts/llm_studio_reaper.lua')
@@ -12,7 +19,7 @@
    if type(req) ~= 'table' then reply_err(op_id, 'BAD_REQUEST', 'unparseable JSON'); return end
    if req.v ~= 1 then reply_err(op_id, 'BAD_VERSION', 'expected v=1'); return end
    if req.op_id ~= op_id then reply_err(op_id, 'ID_MISMATCH', 'filename/op_id differ'); return end
-@@ -514,6 +521,8 @@
+@@ -514,6 +525,8 @@
      if path == '' then reply_err(op_id, 'BAD_REQUEST', 'path required'); return end
      reaper.Main_SaveProjectEx(0, path, 0)
      reply_ok(op_id, { path = path }, { 'op:project.save' })
@@ -21,8 +28,9 @@
    else
      reply_err(op_id, 'UNKNOWN_OP', 'no such op: ' .. tostring(op))
    end
-@@ -524,5 +533,8 @@
+@@ -524,5 +537,9 @@
  local function tick()
++  if reaper.GetExtState('agent_bridge', 'owner') ~= owner_token then return end
    local now = reaper.time_precise()
 +  if studio_handler and studio_handler.observe_session then
 +    studio_handler.observe_session()

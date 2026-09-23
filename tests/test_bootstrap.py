@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import shlex
 import subprocess
 from pathlib import Path
@@ -208,6 +210,78 @@ def test_ini_section_and_unknown_process_status():
     assert b'csurf_cnt=1\n[Other]' in updated
     existing = ('[reaper]\ncsurf_0=' + bootstrap.OSC_AGENT_LINE + '\ncsurf_cnt=1\n[Other]\n').encode()
     assert bootstrap._agent_ini(existing) == existing
+
+
+def test_studio_hook_reserves_bridge_heartbeat_before_starting_deferred_loop():
+    """The startup claim precedes setup and the daemon callback checks its owner."""
+    import re
+    import llm_studio.bootstrap as bootstrap
+
+    patch_text = (Path(__file__).parents[1] / 'adapters/reaper/controller-studio-hook.patch').read_text()
+    match = re.search(r'(?ms)^@@ -185,1 \+185,5 @@\n(.*?)(?=^@@ |\Z)', patch_text)
+    assert match, 'studio hook must patch the pinned heartbeat guard'
+    hunk = ('@@ -185,1 +185,5 @@\n' + match.group(1)).encode()
+    original = ('\n' * 184
+                + "if os.time() - last_ext < 15 then return end\n\n"
+                + 'local function read_file(p) end\n'
+                + 'reaper.defer(tick)\n').encode()
+
+    installed = bootstrap._apply_unified_patch(original, hunk).decode()
+    stale_check = installed.index("if os.time() - last_ext < 15 then return end")
+    owner_claim = installed.index("reaper.SetExtState('agent_bridge', 'owner', owner_token, false)")
+    reservation = installed.index("reaper.SetExtState('agent_bridge', 'heartbeat', tostring(os.time()), false)")
+    next_definition = installed.index('local function read_file(p)')
+    deferred_loop = installed.index('reaper.defer(tick)')
+    assert stale_check < owner_claim < reservation < next_definition < deferred_loop
+    assert "if reaper.GetExtState('agent_bridge', 'owner') ~= owner_token then return end" in patch_text
+
+
+@pytest.mark.skipif(
+    not os.environ.get('REAPER_CONTROLLER_CHECKOUT') or not shutil.which('lua'),
+    reason='set REAPER_CONTROLLER_CHECKOUT and install Lua for the mocked daemon test',
+)
+def test_stalled_daemon_cannot_scan_after_stale_owner_takeover(tmp_path):
+    """A replacement generation makes a delayed callback inert before queue scan."""
+    from llm_studio.bootstrap import _apply_unified_patch
+
+    controller_path = Path(os.environ['REAPER_CONTROLLER_CHECKOUT'])
+    base_bridge = (controller_path / 'bridge/agent_bridge.lua').read_bytes()
+    hook = (Path(__file__).parents[1] / 'adapters/reaper/controller-studio-hook.patch').read_bytes()
+    installed = tmp_path / 'agent_bridge.lua'
+    installed.write_bytes(_apply_unified_patch(base_bridge, hook))
+    resource = tmp_path / 'resource'
+    (resource / 'AgentBridge/log').mkdir(parents=True)
+    harness = tmp_path / 'mock_reaper.lua'
+    harness.write_text(f'''\
+local states, callbacks, guid, scans = {{}}, {{}}, 0, 0
+local resource = {json.dumps(str(resource))}
+reaper = {{
+  GetResourcePath = function() return resource end,
+  RecursiveCreateDirectory = function() return 1 end,
+  GetExtState = function(_, key) return states[key] or '' end,
+  SetExtState = function(_, key, value) states[key] = value end,
+  genGuid = function() guid = guid + 1; return 'generation-' .. guid end,
+  defer = function(fn) callbacks[#callbacks + 1] = fn end,
+  time_precise = function() return 1 end,
+  EnumerateFiles = function() scans = scans + 1; return nil end,
+}}
+local script = {json.dumps(str(installed))}
+dofile(script)
+assert(#callbacks == 1)
+local old_owner = states.owner
+states.heartbeat = tostring(os.time() - 16)
+dofile(script)
+assert(#callbacks == 2 and states.owner ~= old_owner)
+callbacks[1]()
+assert(scans == 0, 'stalled generation scanned after takeover')
+callbacks[2]()
+assert(scans == 1, 'current generation did not scan')
+local claimed_owner = states.owner
+dofile(script)
+assert(states.owner == claimed_owner, 'fresh sibling unexpectedly claimed ownership')
+assert(#callbacks == 3)
+''')
+    subprocess.run([shutil.which('lua'), str(harness)], check=True, capture_output=True, text=True)
 
 
 def test_broken_symlink_never_written(tmp_path, monkeypatch):
