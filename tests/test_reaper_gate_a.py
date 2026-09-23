@@ -7,7 +7,7 @@ import tempfile
 import wave
 
 from tools.qualification.reaper_export_stems import (
-    expected_project_duration, read_pcm, tone_magnitude,
+    expected_project_duration, read_pcm, tone_magnitude, validate_bass_export,
 )
 from tools.qualification.reaper_take_replacement import tone, wait_for_active_copy
 
@@ -74,6 +74,40 @@ def test_a4_render_bound_comes_from_latest_project_item(tmp_path):
 >
 ''')
     assert expected_project_duration(project) == 5.0
+
+
+def test_silent_bass_mode_requires_saved_zero_gain_and_at_most_one_lsb(tmp_path):
+    project = tmp_path / 'session.RPP'
+    project.write_text('''<REAPER_PROJECT 0.1
+  <TRACK {BASS}
+    NAME Bass
+    VOLPAN 0 0 -0.2 -1
+  >
+>
+''')
+    frames = [(0, 0), (1, -1), (0, 0)]
+    result = validate_bass_export(project, frames, 10, expect_silent=True)
+    assert result['ok']
+    assert result['saved_gain'] == 0
+    assert result['max_abs_sample_lsb'] == 1
+
+    too_loud = validate_bass_export(project, [(0, 0), (2, 0)], 10, expect_silent=True)
+    assert not too_loud['ok']
+    assert too_loud['max_abs_sample_lsb'] == 2
+
+    project.write_text(project.read_text().replace('VOLPAN 0 ', 'VOLPAN 0.25 '))
+    nonzero_gain = validate_bass_export(project, frames, 10, expect_silent=True)
+    assert not nonzero_gain['ok']
+    assert nonzero_gain['saved_gain'] == 0.25
+
+
+def test_default_bass_mode_keeps_pan_assertion(tmp_path):
+    project = tmp_path / 'session.RPP'
+    project.write_text('<REAPER_PROJECT 0.1\n>\n')
+    left_panned = [(10, 0)] * 30
+    center = [(10, 10)] * 30
+    assert validate_bass_export(project, left_panned, 10, expect_silent=False)['ok']
+    assert not validate_bass_export(project, center, 10, expect_silent=False)['ok']
 
 
 def test_reopen_waits_for_independent_active_project_observation(tmp_path):

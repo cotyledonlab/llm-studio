@@ -77,6 +77,42 @@ def tone_magnitude(frames: list[tuple[int, int]], rate: int, frequency: int) -> 
     return 2 * math.hypot(sine, cosine) / len(segment)
 
 
+def saved_bass_gain(source: Path) -> float:
+    """Read the Bass track's saved VOLPAN gain from an RPP without REAPER."""
+    text = source.read_text()
+    bass_blocks = []
+    for match in TRACK.finditer(text):
+        block = match.group()
+        name = re.search(r'(?m)^    NAME ([^\n]+)$', block)
+        if name and name.group(1) == 'Bass':
+            bass_blocks.append(block)
+    if len(bass_blocks) != 1:
+        raise ValueError(f'expected exactly one saved Bass track, found {len(bass_blocks)}')
+    volpan = re.search(r'(?m)^    VOLPAN ([^\s]+)(?:\s|$)', bass_blocks[0])
+    if not volpan:
+        raise ValueError('saved Bass track has no VOLPAN gain')
+    gain = float(volpan.group(1))
+    if not math.isfinite(gain):
+        raise ValueError('saved Bass track has an invalid VOLPAN gain')
+    return gain
+
+
+def validate_bass_export(source: Path, frames: list[tuple[int, int]], rate: int,
+                         expect_silent: bool) -> dict:
+    """Validate either the ordinary pan signature or a saved zero-gain Bass."""
+    left = window_rms(frames, rate, 2.4, 2.6, 0)
+    right = window_rms(frames, rate, 2.4, 2.6, 1)
+    if not expect_silent:
+        return {'ok': left > right * 1.05, 'mode': 'pan', 'left_rms': left,
+                'right_rms': right}
+    gain = saved_bass_gain(source)
+    peak = max((abs(sample) for frame in frames for sample in frame), default=0)
+    return {'ok': gain == 0 and peak <= 1, 'mode': 'silent',
+            'saved_gain': gain, 'max_abs_sample_lsb': peak,
+            'allowed_max_abs_sample_lsb': 1, 'left_rms': left,
+            'right_rms': right}
+
+
 def muted_project(source: Path, output: Path, part: str, wav: Path) -> None:
     from reaper_connector import rpp
     rpp.patch_render_file(source, output, str(wav))
@@ -129,6 +165,8 @@ def main() -> None:
     parser.add_argument('--source', required=True, type=Path)
     parser.add_argument('--cfgfile', required=True, type=Path)
     parser.add_argument('--mix', required=True, type=Path)
+    parser.add_argument('--expect-silent-bass', action='store_true',
+                        help='require saved Bass gain zero and a silent Bass stem')
     args = parser.parse_args()
     source, cfgfile, mix = (args.source.resolve(strict=True),
                             args.cfgfile.resolve(strict=True), args.mix.resolve(strict=True))
@@ -169,10 +207,11 @@ def main() -> None:
     keys_late = window_rms(keys, mix_rate, 4.4, 4.6)
     bass_left = window_rms(bass, mix_rate, 2.4, 2.6, 0)
     bass_right = window_rms(bass, mix_rate, 2.4, 2.6, 1)
+    bass_check = validate_bass_export(source, bass, mix_rate, args.expect_silent_bass)
     drums_440 = tone_magnitude(drums, mix_rate, 440)
     drums_330 = tone_magnitude(drums, mix_rate, 330)
     result = {'ok': aligned and expected_bounds and error_ratio < 1e-5 and keys_mid < keys_early * .05
-              and keys_late > keys_early * .2 and bass_left > bass_right * 1.05
+              and keys_late > keys_early * .2 and bass_check['ok']
               and drums_440 > drums_330 * 100,
               'source': str(source), 'mix': str(mix), 'root': str(root),
               'sample_rate': mix_rate, 'sample_width_bytes': mix_width,
@@ -185,6 +224,7 @@ def main() -> None:
               'max_summed_stem_error_lsb': max(abs(value) for value in errors),
               'keys_rms': {'early': keys_early, 'mid': keys_mid, 'late': keys_late},
               'bass_rms': {'left': bass_left, 'right': bass_right},
+              'bass_check': bass_check,
               'drums_tone_magnitude': {'accepted_440hz': drums_440, 'replaced_330hz': drums_330},
               'renders': rendered}
     (root / 'audio-evidence.json').write_text(json.dumps(result, indent=2) + '\n')
