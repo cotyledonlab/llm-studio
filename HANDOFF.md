@@ -1,5 +1,26 @@
 # Current handoff — issue #11 draft, live checks pending
 
+## 2026-09-23 REAPER instance cleanup
+
+John asked that new REAPER instances be cleaned up as work proceeds because
+three open instances were hard to distinguish. Native inventory found the
+older `a3-probe` profile with John's Bass handoff tab and other dirty tabs,
+plus two agent-owned disposable profiles: `issue11-owner-4yhg_yj8` and
+`issue11-rerun-0hhcwsdj`. All transports were stopped. The older handoff
+instance was left open and untouched.
+
+The one dirty owner-profile tab and four dirty rerun-profile tabs were saved
+to unique RPP snapshots under
+`/private/tmp/llm-studio-reaper/session-cleanup-p9_3l6xq/`. The manifest maps
+each snapshot to its source tab. Every original project file retained its
+pre-snapshot SHA256, and native readback showed the tab paths unchanged. Both
+disposable bridges returned successful `bridge.shutdown` replies. Exact
+profile/PID checks preceded SIGTERM of only those two processes; subsequent
+process inventory found only the older `a3-probe` REAPER instance (PID 23290).
+Do not assume that PID persists across restarts. Future work should create one
+identifiable disposable instance at a time and close it after preserving its
+scratch state. Ask John before closing the older/shared instance.
+
 ## 2026-09-23 A05/A06/A15 continuation
 
 The A05 retained baseline, patched, and reopened native envelope chunks were
