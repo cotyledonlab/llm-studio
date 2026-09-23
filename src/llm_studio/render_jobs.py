@@ -139,6 +139,7 @@ class _Record:
     worker_completed_at: datetime | None = None
     worker_succeeded: bool = False
     worker_error: str | None = None
+    worker_group_leaked: bool = False
     stop_started_monotonic: float | None = None
     work_root: Path | None = None
     output_path: Path | None = None
@@ -332,6 +333,11 @@ class RenderService:
             for record in self._records.values():
                 if record.process is not None and record.process.is_alive():
                     self._signal(record, signal.SIGKILL)
+                if not record.state.terminal:
+                    record.error = (
+                        "service shutdown returned while isolated process-group cleanup "
+                        "is pending; worker capacity remains reserved"
+                    )
             self._condition.notify_all()
         self._supervisor.join(timeout=1.0)
 
@@ -392,6 +398,13 @@ class RenderService:
                     and record.process.is_alive()
                 ):
                     self._signal(record, signal.SIGKILL)
+                if (
+                    record.worker_group_leaked
+                    and record.stop_started_monotonic is not None
+                    and time.monotonic() - record.stop_started_monotonic >= self.cancel_grace_s
+                    and self._process_group_exists(record)
+                ):
+                    self._signal(record, signal.SIGKILL)
                 if not record.process.is_alive():
                     record.process.join(timeout=0)
                     self._drain_messages(record)
@@ -399,6 +412,18 @@ class RenderService:
                         JobState.CANCELLING,
                         JobState.TIMING_OUT,
                     }
+                    if (
+                        not stopping
+                        and not record.worker_group_leaked
+                        and self._process_group_exists(record)
+                    ):
+                        record.worker_group_leaked = True
+                        record.stop_started_monotonic = time.monotonic()
+                        record.error = "render worker left subprocesses running; terminating process group"
+                        self._signal(record, signal.SIGTERM)
+                        continue
+                    if record.worker_group_leaked and self._process_group_exists(record):
+                        continue
                     grace_elapsed = (
                         record.stop_started_monotonic is not None
                         and time.monotonic() - record.stop_started_monotonic
@@ -408,6 +433,7 @@ class RenderService:
                         if not grace_elapsed:
                             continue
                         self._signal(record, signal.SIGKILL)
+                        continue
                     self._finish_stopped_record(record)
 
         for job_id in tuple(self._queue):
@@ -522,6 +548,9 @@ class RenderService:
         elif not record.worker_succeeded:
             record.state = JobState.FAILED
             record.error = "render worker exited without a completion message"
+        elif record.worker_group_leaked:
+            record.state = JobState.FAILED
+            record.error = "render worker left subprocesses running; process group terminated"
         elif (
             record.worker_completed_at is None
             or record.worker_completed_at > record.job.deadline_at

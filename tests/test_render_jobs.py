@@ -41,6 +41,18 @@ def _hanging_worker(job: RenderJob, output: Path) -> None:
         time.sleep(0.1)
 
 
+def _successful_worker_with_live_child(job: RenderJob, output: Path) -> None:
+    child_code = (
+        "import pathlib,signal,time;"
+        f"pathlib.Path({job.payload['child_started_path']!r}).write_text('started');"
+        "signal.signal(signal.SIGTERM,signal.SIG_IGN);"
+        "time.sleep(0.6);"
+        f"pathlib.Path({job.payload['child_late_path']!r}).write_text('escaped')"
+    )
+    subprocess.Popen([sys.executable, "-c", child_code])
+    _successful_worker(job, output)
+
+
 def _late_worker(job: RenderJob, output: Path) -> None:
     signal.signal(signal.SIGTERM, lambda *_: None)
     Path(job.payload["started_path"]).write_text(str(os.getpid()))
@@ -49,6 +61,17 @@ def _late_worker(job: RenderJob, output: Path) -> None:
 
 
 def _crashing_worker(job: RenderJob, output: Path) -> None:
+    os._exit(17)
+
+
+def _crashing_worker_with_live_child(job: RenderJob, output: Path) -> None:
+    child_code = (
+        "import pathlib,time;"
+        "time.sleep(0.6);"
+        f"pathlib.Path({job.payload['child_late_path']!r}).write_text('escaped')"
+    )
+    subprocess.Popen([sys.executable, "-c", child_code])
+    Path(job.payload["started_path"]).write_text("started")
     os._exit(17)
 
 
@@ -100,6 +123,43 @@ def test_success_runs_out_of_process_and_only_then_publishes(tmp_path: Path) -> 
     worker = json.loads((job.result_path / "worker.json").read_text())
     assert worker == {"job_id": job.job_id, "pid": result.worker_pid}
     assert worker["pid"] != os.getpid()
+
+
+def test_successful_worker_cannot_publish_while_child_process_is_running(
+    tmp_path: Path,
+) -> None:
+    child_started = tmp_path / "child.started"
+    child_late = tmp_path / "child-escaped"
+    second_started = tmp_path / "second.started"
+    with RenderService(max_workers=1, cancel_grace_s=0.2) as service:
+        job = _job(
+            tmp_path,
+            "leaked-child",
+            child_started_path=str(child_started),
+            child_late_path=str(child_late),
+        )
+        service.submit(job, _successful_worker_with_live_child)
+        _wait_for(child_started)
+        second = _job(
+            tmp_path,
+            "after-leak",
+            started_path=str(second_started),
+            sleep_s=0.01,
+        )
+        queued = service.submit(second, _sleeping_worker)
+        assert queued.state is JobState.QUEUED
+        time.sleep(0.05)
+        assert service.status(job.job_id).state is JobState.RUNNING
+        assert not second_started.exists()
+        result = service.wait(job.job_id, timeout=3)
+        second_result = service.wait(second.job_id, timeout=3)
+
+    assert result.state is JobState.FAILED
+    assert "left subprocesses running" in (result.error or "")
+    assert not job.result_path.exists()
+    assert second_result.state is JobState.SUCCEEDED
+    time.sleep(0.7)
+    assert not child_late.exists()
 
 
 def test_default_admission_limit_runs_two_jobs_and_queues_the_third(tmp_path: Path) -> None:
@@ -187,6 +247,50 @@ def test_absolute_deadline_terminates_hung_process_group_without_publication(
     assert not child_late.exists()
 
 
+def test_cancellation_waits_for_term_ignoring_child_to_stop(tmp_path: Path) -> None:
+    started = tmp_path / "cancel-hung.started"
+    child_late = tmp_path / "cancel-child-escaped"
+    with RenderService(cancel_grace_s=0.1) as service:
+        job = _job(
+            tmp_path,
+            "cancel-hung",
+            started_path=str(started),
+            child_late_path=str(child_late),
+        )
+        service.submit(job, _hanging_worker)
+        _wait_for(started)
+        service.cancel(job.job_id)
+        result = service.wait(job.job_id, timeout=3)
+
+    assert result.state is JobState.CANCELLED
+    assert not job.result_path.exists()
+    time.sleep(0.9)
+    assert not child_late.exists()
+
+
+def test_close_stays_bounded_when_term_ignoring_child_needs_kill(tmp_path: Path) -> None:
+    started = tmp_path / "close-hung.started"
+    child_late = tmp_path / "close-child-escaped"
+    service = RenderService(cancel_grace_s=0.1)
+    job = _job(
+        tmp_path,
+        "close-hung",
+        started_path=str(started),
+        child_late_path=str(child_late),
+    )
+    service.submit(job, _hanging_worker)
+    _wait_for(started)
+
+    before = time.monotonic()
+    service.close()
+    assert time.monotonic() - before < 3.5
+    result = service.status(job.job_id)
+    assert result.state is not JobState.SUCCEEDED
+    assert not job.result_path.exists()
+    time.sleep(0.9)
+    assert not child_late.exists()
+
+
 def test_cancellation_is_acknowledged_quickly_and_late_success_cannot_publish(
     tmp_path: Path,
 ) -> None:
@@ -219,6 +323,29 @@ def test_worker_crash_is_reported_as_failure_not_success(tmp_path: Path) -> None
     assert result.state is JobState.FAILED
     assert "exit code 17" in (result.error or "")
     assert not job.result_path.exists()
+
+
+def test_crashing_worker_cannot_leave_a_child_writing_after_failure(
+    tmp_path: Path,
+) -> None:
+    started = tmp_path / "crash-child.started"
+    child_late = tmp_path / "crash-child-escaped"
+    with RenderService(cancel_grace_s=0.1) as service:
+        job = _job(
+            tmp_path,
+            "crash-with-child",
+            started_path=str(started),
+            child_late_path=str(child_late),
+        )
+        service.submit(job, _crashing_worker_with_live_child)
+        _wait_for(started)
+        result = service.wait(job.job_id, timeout=3)
+
+    assert result.state is JobState.FAILED
+    assert "exit code 17" in (result.error or "")
+    assert not job.result_path.exists()
+    time.sleep(0.7)
+    assert not child_late.exists()
 
 
 def test_expired_job_never_starts(tmp_path: Path) -> None:
