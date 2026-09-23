@@ -53,6 +53,24 @@ then complete a guarded native save/reopen if the isolated dialog is cleared.
 Never repeat the already accepted replacement on the dirty target. The
 historical render timeout still has no explanation.
 
+The bridge owner guard was Sol-reviewed, passed a mocked Lua callback test and
+the pinned-controller suite (116 passed, 8 skipped), and was committed as
+`2e29299`. A new disposable profile at
+`/private/tmp/llm-studio-reaper/issue11-owner-4yhg_yj8/` was created to test
+it without touching the dirty earlier instance. The reviewed bootstrap plan
+and receipt are in that directory; `bootstrap-verify` matched all four installed
+file hashes. `install_profile_license.py` copied the existing protected license
+file into the stopped new profile without displaying its contents. The new
+REAPER process opened a clean three-track copy of the saved manual RPP in its
+single tab. Native preflight passed on exact resource, project path, stopped
+transport, track count and clean state. Launching the installed bridge yielded
+no heartbeat/reply. A minimal deferred probe wrote `top=pass` but no deferred
+marker, matching the earlier startup-dialog behavior; this is not evidence of
+a bridge-guard failure. John was asked to dismiss any dialog in the new
+instance. When callbacks run, observe three stable session tokens before one
+new guarded replacement in that fresh project. Keep the old dirty target
+untouched.
+
 Updated: 2026-09-23. Branch: `codex/issue-11-gate-a`; PR head at review start
 was `b884cfb`. Export-bound fix `679cefa` and pinned file-drop test `53e9d87`
 were committed afterward. Guarded empty-profile bootstrap is `c775004`.

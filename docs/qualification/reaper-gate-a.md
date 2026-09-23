@@ -163,6 +163,18 @@ and `/private/tmp/llm-studio-reaper/gate-a4-stems-39pu0q2d/audio-evidence.json`.
 This checks the audio represented by the observed post-state; it is not a
 save/reopen or installed transport acceptance pass.
 
+The reviewed bridge patch now reserves a process-local owner generation before
+its first deferred tick and checks that generation before each scan. A mocked
+Lua host showed an old loop becoming inert after stale-owner takeover; the
+pinned-controller suite passed 116 tests with 8 skips. A new licensed disposable
+profile under `/private/tmp/llm-studio-reaper/issue11-owner-4yhg_yj8/` was
+installed from the pinned plan and its four file hashes verified. Native
+preflight found a clean three-track manual-copy tab and stopped transport.
+Its bridge still has no heartbeat because even a minimal deferred callback has
+not run after script top-level execution. A startup dialog is again suspected;
+John was asked to check the new instance. The single-owner runtime behavior
+and a complete replacement/save/reopen/export sequence remain unqualified.
+
 ## Gate A capability matrix
 
 Statuses refer to the stated evidence scope; copy-based qualification does not
