@@ -1,5 +1,58 @@
 # Current handoff — issue #11 draft, live checks pending
 
+## 2026-09-23 latest continuation
+
+John confirmed he moved the Bass fader in the uniquely named original-profile
+handoff tab. Bridge readback found linear gain `1e-50` after `0.50118723362727`,
+with pan, ReaEQ, and Keys points unchanged. A guarded native save of only that
+tab wrote Bass `VOLPAN 0 -0.2` to
+`/private/tmp/llm-studio-reaper/gate-a4-bass-handoff-5duxo9g9/session-bass-handoff.RPP`,
+SHA256 `faf7cf49e91af503015f00086437804e50f78ef89dc18582e0e67b23ef91b6f6`.
+The original tab still reported dirty; all older original-profile tabs were
+preserved. The copy carries the earlier Keys point at two seconds `0.0419846`,
+not the later saved `a3-probe` point.
+
+John also licensed the isolated REAPER instance. Its bridge began responding.
+The credential was not read or stored in the repository. An isolated tab at
+`/private/tmp/llm-studio-reaper/issue11-installed-human-7y171ubg/session-human-bass.RPP`
+opened from the saved manual RPP with exactly three tracks. Native tab checks
+proved one selected target path, stopped transport, and unchanged older tabs.
+The guarded installed helper made **one** `studio.replace_stem` call, which
+returned the expected hash-addressed 440 Hz Drums source and preserved item/take
+GUIDs. Its immediate independent read failed on a changed session token.
+Subsequent read-only snapshots alternated between two startup nonces for the
+same path/revision; `ps` found one REAPER process on this profile. This is a
+duplicate bridge-handler ownership fault. Do not retry that replacement or
+trust file-drop reads/writes until single-owner behavior is restored.
+
+Native readback at
+`/private/tmp/llm-studio-reaper/issue11-installed-human-7y171ubg/native-reconcile.txt`
+found the new source in the unique dirty target tab, the expected track/item/take
+GUIDs and five-second geometry, Bass gain `0` and unchanged pan/ReaEQ, plus
+unchanged older isolated tabs. The saved isolated RPP still references the old
+Drums source. A native save script first stopped on an overstrict revision
+assertion; after adjusting that assertion, a forwarded script produced no
+report, possibly due to a REAPER script-error dialog. John was asked to inspect
+the isolated instance for a dialog. Do not claim save/reopen success yet.
+
+An explicitly labeled offline copy of the saved manual RPP with only the native
+observed Drums source path patched in rendered successfully. Evidence:
+`/private/tmp/llm-studio-reaper/issue11-manual-export-_5e43jyr/offline-export-evidence.json`
+and `/private/tmp/llm-studio-reaper/gate-a4-stems-39pu0q2d/audio-evidence.json`.
+It has 220,500 aligned frames, silent Bass, audible Keys automation, strong
+440 Hz Drums, and one-LSB maximum mix/stem error. This does not replace the
+live save/reopen acceptance. A Luna child implemented a synchronous bridge
+heartbeat reservation in the installed hook patch; Sol review and live
+requalification remain pending. The license profile helper and silent-Bass
+export checker were committed and pushed with the guarded replacement runner
+at `dd9fc15`, `3abbbc7`, and `bfdf5a5`. Keep PR #37 draft and issue #11 open.
+
+Next: review/commit the bridge owner guard, requalify on a fresh isolated
+instance or fully stopped profile without disturbing the dirty target tab,
+then complete a guarded native save/reopen if the isolated dialog is cleared.
+Never repeat the already accepted replacement on the dirty target. The
+historical render timeout still has no explanation.
+
 Updated: 2026-09-23. Branch: `codex/issue-11-gate-a`; PR head at review start
 was `b884cfb`. Export-bound fix `679cefa` and pinned file-drop test `53e9d87`
 were committed afterward. Guarded empty-profile bootstrap is `c775004`.
