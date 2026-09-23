@@ -13,8 +13,8 @@ Host: REAPER `7.80/macOS-arm64` on macOS 26.5.2. Controller protocol remains
 pinned at `fd56d0008ffa5fba25cc58a70e5ae632c80b4c16`; the adjacent
 checkout currently includes one later instruction-only commit. The first A4
 native run loaded this branch's `studio_handler.lua` directly inside a REAPER
-ReaScript. Installed file-drop transport for the new replacement operation is
-not yet qualified. All project writes were to a disposable copy.
+ReaScript. The installed file-drop transport was qualified in a later disposable
+run described below. All project writes were to disposable copies.
 
 Native evidence (temporary):
 `/private/tmp/llm-studio-reaper/gate-a4-693qi2_4/native-evidence.txt` and

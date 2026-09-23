@@ -113,8 +113,8 @@ The A4 replacement operation targets one existing single-take WAV item by
 GUID, keeps its position/length and source format, and fails closed on a stale
 item/project observation. It does not replace arbitrary MIDI takes, time-stretch
 settings or multi-take comp lanes. [Gate A evidence](../../docs/qualification/reaper-gate-a.md)
-distinguishes native copy-based success from the pending manual-fader and
-installed-transport acceptance checks.
+records the bounded native and installed-transport checks, including the manual
+Bass move, on disposable copies. Full Gate A acceptance remains open.
 
 Session identity is the saved path, not an invented REAPER project GUID.
 The token combines a handler-load nonce with observed project pointer/path
