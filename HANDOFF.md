@@ -1,8 +1,8 @@
-# Current handoff — issue #11 draft, live manual check pending
+# Current handoff — issue #11 draft, live checks pending
 
-Updated: 2026-09-22. Branch: `codex/issue-11-gate-a`; PR head at review start
+Updated: 2026-09-23. Branch: `codex/issue-11-gate-a`; PR head at review start
 was `b884cfb`. Export-bound fix `679cefa` and pinned file-drop test `53e9d87`
-were committed afterward.
+were committed afterward. Guarded empty-profile bootstrap is `c775004`.
 Draft PR: [#37](https://github.com/cotyledonlab/llm-studio/pull/37).
 Issue [#11](https://github.com/cotyledonlab/llm-studio/issues/11) remains open;
 Gate A is not accepted. Parallel issue #15 work is at draft PR #35 and must not
@@ -32,7 +32,48 @@ passes 82 tests with 9 skips; the optional real-controller install test is
 inapplicable because the adjacent controller checkout has advanced beyond
 the pin. GitHub PR metadata/checks could not be fetched during this review.
 
-## Live REAPER ownership and producer state
+## 2026-09-23 continuation
+
+John reported no remaining REAPER dialogs. A read-only native probe found the
+running `a3-probe` profile stopped with four tabs, three dirty; two tabs shared
+the path `gate-a4-7rng30qk/session.RPP`. The original `a3-probe/session.RPP`
+was no longer open. Do not use the old manual-handoff or take-replacement
+runners: both assume that original tab, and path-only lookup cannot distinguish
+the duplicate A4 tabs. Do not close or save any of the prior dirty tabs.
+
+A new, byte-identical copy of the saved clean A4 RPP is at
+`/private/tmp/llm-studio-reaper/gate-a4-bass-handoff-5duxo9g9/session-bass-handoff.RPP`.
+Its offline inspection report is beside it. It has the earlier manually drawn
+Keys lane (two-second raw gain `0.0419846`), not the later saved
+`a3-probe/session.RPP` value `1.95447444`; do not claim it recovers a lost
+in-memory edit. The unique copy was opened as a fifth tab without closing or
+saving the four old tabs. Installed bridge readback in `before-manual.json`
+recorded Bass linear gain `0.50118723362727`, pan `-0.2`, ReaEQ and the Keys
+points. John was asked to move only this tab's Bass fader. No changed value or
+producer confirmation had arrived at this update.
+
+For separate installed-transport qualification, a pinned controller checkout,
+bootstrap plan, receipt and new profile are under
+`/private/tmp/llm-studio-reaper/issue11-installed-prep-20260923/`. The opt-in
+empty-profile bootstrap guard was reviewed by Sol and tested; the full suite
+passed 93 tests with 8 skips against that exact pinned checkout. An elevated
+live process probe identified PID 23290 using the distinct `a3-probe` cfgfile.
+The guarded apply installed four files only in the new empty resource;
+`bootstrap-verify` matched their hashes before REAPER startup.
+
+A second REAPER instance, PID 69313, uses only that new cfgfile and the copied
+project `/private/tmp/llm-studio-reaper/issue11-installed-run-60evlc5m/session.RPP`.
+One-shot scripts observed its exact resource, opened the copied project and
+loaded the installed bridge script, but no heartbeat or file-drop reply
+followed. Even a minimal `reaper.defer` probe wrote its top-level marker but
+not its deferred marker. The cause is unproven; a startup/modal dialog blocking
+the event loop is plausible. John was asked to check/dismiss any dialog in the
+second instance. After that, retry only the minimal defer probe once with a
+five-second bound. If it still does not run, stop bridge retries and record
+installed runtime acceptance as pending. Do not count the installed file hashes
+or offline fake-daemon test as live transport success.
+
+## Prior REAPER ownership and producer state (2026-09-22)
 
 Only this task may mutate the DAW. REAPER was using the disposable profile
 `/private/tmp/llm-studio-reaper/a3-probe/profile/reaper.ini` at last inspection.
@@ -63,14 +104,16 @@ completed. Do not repeat either failure path unchanged.
 
 ## Next bounded steps
 
-1. Resume REAPER work only after observing the app state and clearing the
-   repeated script dialogs. Avoid `close_run_tab.lua`.
-2. Capture a real Bass fader change if John approves the disposable handoff,
-   then replace Drums with a fresh observation and verify save/reopen plus audio.
-3. Qualify the new handler through the pinned controller's installed file-drop
-   transport in a **separate disposable profile**, not by modifying the running
-   profile. Then write the complete Gate A capability matrix and go/no-go
-   decision. Do not close #11 or undraft PR #37 while these checks are open.
+1. After John reports the Bass move, observe the unique handoff copy again and
+   prove a real gain change with unchanged session binding, pan, FX and Keys
+   lane. Preserve all earlier dirty tabs and do not use path-only tab lookup.
+2. After John checks the second instance for a dialog, repeat the minimal defer
+   probe once. If it passes, check the installed daemon's heartbeat and run a
+   fresh `studio.replace_stem` through the pinned file-drop client against the
+   separate disposable profile. Verify save/reopen, bindings and export. If
+   defer still fails, record the installed runtime gate as pending.
+3. Finish the Gate A report and go/no-go decision from observed evidence. Do
+   not close #11 or undraft PR #37 while these checks remain open.
 
 ---
 

@@ -87,6 +87,29 @@ and all three stems found 220,500 frames each at 44.1 kHz. This is a zero-extra-
 tail fixture; it does not qualify tails from instruments or effects in other
 projects.
 
+## 2026-09-23 live continuation
+
+A read-only tab probe found four tabs in the existing `a3-probe` profile,
+including three dirty tabs and two tabs sharing the same A4 project path. The
+original one-track source tab was closed. A uniquely named disposable copy of
+the saved, clean A4 RPP was opened as a fifth tab without closing or saving the
+others. Bridge readback recorded its Bass gain, pan and ReaEQ plus the earlier
+manual Keys envelope before asking John to move Bass. No changed Bass value or
+producer confirmation has been observed yet. This copy does not recover the
+later `a3-probe` in-memory Keys edit.
+
+The pinned bridge, studio handler, OSC file and INI were installed in a new,
+empty disposable resource under
+`/private/tmp/llm-studio-reaper/issue11-installed-prep-20260923/` using the
+reviewed isolated-profile bootstrap guard. The existing REAPER PID was
+independently identified with a different cfgfile; installation and file-hash
+verification passed before starting the second instance. The second instance
+opened a separate saved A4 copy, but the installed daemon produced no heartbeat
+or file-drop reply. A minimal deferred-callback probe also failed to run its
+callback despite executing its top-level code. A blocking startup dialog is a
+possibility, not a diagnosis. Installed replacement transport and its live
+readback remain unqualified.
+
 ## Gate A capability matrix
 
 Statuses refer to the stated evidence scope; copy-based qualification does not
@@ -111,18 +134,16 @@ in these attempts; they do not explain or resolve that reliability failure.
 
 ## Remaining acceptance
 
-1. John was asked to change Bass gain in the disposable three-track tab, but
-   reported a dialog and that the project closed. No manual edit was observed
-   or counted. A read-only REAPER probe found the app still running and both
-   tabs still open at that time. Later qualification tab cleanup produced
-   repeated dialogs and the current state is unknown. Stop REAPER operations
-   until the app state is re-observed and the dialogs are cleared.
+1. John was asked to change Bass gain in the new uniquely named disposable
+   three-track tab. The original attempt encountered a dialog and did not
+   qualify; the new copy's baseline is recorded, but a subsequent human fader
+   change has not yet been observed.
 2. After a verified manual Bass move, replace the Drums source again with a
    fresh observation, save/reopen, and independently verify the exact gain,
    Keys envelope, FX, media references and audible export.
-3. Qualify the new operation through the installed pinned-controller transport
-   in a separate disposable profile. Do not replace a script in a running
-   producer profile.
+3. Confirm the second instance's deferred callbacks run, then qualify the new
+   operation through the installed pinned-controller transport there. Do not
+   replace a script in the running producer profile.
 4. Review the implementation and full Gate A capability matrix, then make an
    honest go/no-go decision. Keep the historical renderer timeout as unresolved
    unless a bounded reproduction explains it.
