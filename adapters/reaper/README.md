@@ -21,6 +21,15 @@ process sharing one resource directory; it does not coordinate separate REAPER
 processes that share the directory.
 No generic bridge code is copied into this repo.
 
+To restart a running bridge, send `bridge.shutdown`, verify ownership is
+released, then launch `Scripts/agent_bridge.lua` once. In a REAPER 7.80
+disposable profile, forwarding that same script path while it was already
+running stopped the service; the next launch started a new owner immediately.
+Inspect the bridge after each action instead of assuming a launch always starts
+a second instance. A byte-identical script at a different filename did claim
+ownership while the first script was running, and repeated snapshots kept one
+stable new session token.
+
 The controller's declared MIT licence has no accompanying copyright notice at
 this pin. Resolve that and this repository's outgoing licence before distribution.
 

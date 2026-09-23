@@ -1,5 +1,46 @@
 # Current handoff — issue #11 draft, live checks pending
 
+## 2026-09-23 bridge lifecycle follow-up
+
+Sol reviewed the REAPER relaunch fault. The bridge patch now claims a fresh
+process-local owner on every invocation, checks ownership before each queue
+scan, and conditionally clears ownership on exit or explicit shutdown without
+clearing a successor. The exact patch applies with both the strict bootstrap
+installer and `git apply`; a mocked Lua host covers immediate rerun, old exit
+after takeover, shutdown/restart, and late exit. The pinned-controller suite
+passed 116 tests with 8 skips, including the Lua test. The fix was committed
+and pushed as `0395cba`.
+
+A separate licensed disposable profile at
+`/private/tmp/llm-studio-reaper/issue11-rerun-0hhcwsdj/` installed that exact
+patch; `bootstrap-verify` matched all four file hashes. REAPER launched without
+a project argument, so the blank startup tab stayed blank. Deferred callbacks
+ran without another audio-device or license dialog. A saved three-track manual
+copy was opened in a second tab. The first installed bridge launch returned
+three snapshots with one stable token. A second CLI invocation of the **same
+script path** stopped replies. A native probe found deferred callbacks still
+running, owner ExtState empty, and heartbeat aged by exit cleanup. A third
+invocation started a new stable owner immediately, without a 15-second wait.
+This is consistent with REAPER treating the second same-path action as a stop
+toggle; that UI/action behavior is inferred from state, not documented as a
+general rule. Do not prescribe blind double launches.
+
+While that owner was active, a byte-identical bridge script at a distinct
+filename claimed a new owner. Five snapshots shared one new token and the
+project remained stopped with three tracks. `bridge.shutdown` returned success;
+native readback found no owner, an aged ExtState heartbeat, working deferred
+callbacks, and an unchanged project. One launch of the installed script then
+restored a stable token across three snapshots. This qualifies owner takeover,
+explicit stop, and immediate restart in one process with one disposable
+resource. It does not coordinate separate REAPER processes sharing a resource.
+The on-disk heartbeat file can look fresh for up to 15 seconds after shutdown.
+
+Gate A is a **no-go for full acceptance** despite the A4 pass described below:
+A01, A05, A06, and A15 remain partial, and the old renderer timeout remains
+unexplained. Keep PR #37 draft and issue #11 open. Next work should address or
+explicitly narrow those remaining capability checks without repeating the
+accepted A4 replacement on an already changed tab.
+
 ## 2026-09-23 after audio-device selection
 
 John selected an audio device in the new licensed instance at

@@ -2,8 +2,9 @@
 
 Updated: 2026-09-23. **The installed A4 replacement, save/reopen, and export
 passed on a disposable copy; Gate A is not yet accepted.** The human Bass move
-was observed and preserved. Bridge relaunch behavior and wider Gate A coverage
-remain open. This report does not replace the completed [A3 automation
+was observed and preserved. Bridge owner recovery passed in a separate
+disposable profile; wider Gate A coverage remains open. This report does not
+replace the completed [A3 automation
 qualification](reaper-automation.md) or claim the old renderer timeout is fixed.
 
 ## Scope and builds
@@ -192,8 +193,8 @@ with REAPER terminating the old script before the new invocation returned on
 the fresh-heartbeat guard. After the heartbeat aged, one launch restored a
 single stable bridge token. This lifecycle fault is separate from the earlier
 duplicate-handler race. The installed operation below ran with that restored
-owner; a relaunch-safe patch is under review. Do not re-run the bridge script
-as a guard test in the live instance.
+owner. A later patch removed the fresh-heartbeat startup gate and added
+conditional exit cleanup; its separate live qualification is recorded below.
 
 The fresh three-track tab then passed one guarded installed
 `studio.replace_stem` call. The handler accepted the same-length 440 Hz Drums
@@ -224,6 +225,33 @@ and `/private/tmp/llm-studio-reaper/gate-a4-stems-nye0xhlr/audio-evidence.json`.
 This is a deterministic signal check, not a human listening judgement. The
 fixture configures no extra tail, so it does not qualify nonzero FX tails.
 
+The relaunch-safe bridge patch was installed from the clean pinned controller
+in a third disposable profile at
+`/private/tmp/llm-studio-reaper/issue11-rerun-0hhcwsdj/`. All four installed
+file hashes verified; the protected license was copied without exposing its
+contents. Launching REAPER without a project argument avoided the earlier
+startup duplication. The deferred probe passed, a three-track saved manual
+copy opened in a new tab, and the first installed bridge launch returned three
+snapshots with one stable token. A second same-path CLI invocation stopped
+replies. Native readback found deferred callbacks running, owner ExtState
+cleared, and its heartbeat aged by exit cleanup. A third same-path invocation
+started a new owner immediately with four stable snapshots, without waiting
+for heartbeat expiry. This is consistent with the REAPER action toggling a
+running ReaScript off on the second invocation; the action semantics are an
+inference from observed state.
+
+A byte-identical installed bridge script at a distinct filename was then
+launched while the prior owner was active. Five file-drop snapshots showed a
+new stable session token, with the same three tracks and no project change.
+This exercises native owner-generation takeover between distinct script
+identities. An explicit `bridge.shutdown` returned success; native readback
+found no owner, an aged ExtState heartbeat, running deferred callbacks, and an
+unchanged stopped project. One launch of the installed bridge then restored a
+new stable token across three snapshots. The on-disk heartbeat may appear
+fresh briefly after shutdown because cleanup only ages ExtState. This live
+test does not coordinate separate REAPER processes sharing one resource; the
+guarded profiles used distinct resources.
+
 ## Gate A capability matrix
 
 Statuses refer to the stated evidence scope; copy-based qualification does not
@@ -242,16 +270,22 @@ by itself establish the complete producer workflow.
 | A18 | Export includes accepted takes and audible manual automation with correct duration/tails | **Passed for the disposable zero-extra-tail fixture.** The native-saved and reopened installed replacement rendered at five seconds; aligned stems reproduced the mix, Bass was silent, the Keys envelope was audible, and Drums used the accepted source. Nonzero tails are unqualified, and the historical 45-second renderer timeout remains unexplained. |
 
 The new installed replacement, save/reopen, and export checks passed with one
-stable bridge owner. Bridge relaunch remains unreliable pending the lifecycle
-fix and live requalification. A4's bounded renders show the old renderer timeout did not reproduce
-in these attempts; they do not explain or resolve that reliability failure.
+stable bridge owner. Bridge stop, immediate restart, and distinct-script owner
+takeover passed in a separate disposable profile. A4's bounded renders show
+the old renderer timeout did not reproduce in these attempts; they do not
+explain or resolve that reliability failure.
+
+**Gate A decision: no-go for full acceptance on this evidence.** The requested
+A4 manual-gain, installed replacement, reopen, and zero-extra-tail export slice
+passes in a disposable project. A01, A05, A06, and A15 remain partial in the
+matrix, and the historical renderer timeout has no diagnosis. Keep PR #37 draft
+and issue #11 open while those checks are resolved or explicitly narrowed by
+the producer.
 
 ## Remaining acceptance
 
-1. Fix bridge relaunch so a second invocation claims ownership without losing
-   the daemon. Requalify its lifecycle in a separate disposable profile. Never
-   repeat the accepted replacement on an already changed tab.
+1. Complete or explicitly narrow the remaining partial capabilities in the
+   matrix. Never repeat the accepted replacement on an already changed tab.
 2. Do not replace a script in the running producer profile.
-3. Review the full Gate A capability matrix, then make an
-   honest go/no-go decision. Keep the historical renderer timeout as unresolved
-   unless a bounded reproduction explains it.
+3. Keep the historical renderer timeout as unresolved unless a bounded
+   reproduction explains it.
