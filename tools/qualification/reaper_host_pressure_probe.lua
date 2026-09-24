@@ -18,10 +18,16 @@ local previous_loop = reaper.time_precise()
 local maximum_loop_gap_ms = 0
 local interval_s = 0.1
 local previous_audio_age_ms = nil
+local next_sample_at = previous_loop + interval_s
+
+if previous_audio ~= 0 and previous_current_ms ~= nil then
+  previous_audio_age_ms = (previous_current_ms - previous_audio) % 4294967296
+end
 
 file:write(string.format(
-  '{"sample_epoch":%d,"probe_running":true,"audio_xrun_ms":0,"media_xrun_ms":0,"current_ms":0,"audio_xrun_events":0,"media_xrun_events":0,"latest_audio_xrun_age_ms":null,"loop_gap_ms":0,"max_loop_gap_ms":0}\n',
-  os.time()
+  '{"sample_epoch":%d,"probe_running":false,"audio_xrun_ms":%d,"media_xrun_ms":%d,"current_ms":%d,"audio_xrun_events":0,"media_xrun_events":0,"latest_audio_xrun_age_ms":%s,"loop_gap_ms":0,"max_loop_gap_ms":0}\n',
+  os.time(), previous_audio, previous_media, previous_current_ms or 0,
+  previous_audio_age_ms and tostring(previous_audio_age_ms) or "null"
 ))
 file:flush()
 
@@ -41,6 +47,12 @@ local function sample()
   local gap_ms = (now - previous_loop) * 1000
   if gap_ms > maximum_loop_gap_ms then maximum_loop_gap_ms = gap_ms end
   previous_loop = now
+
+  if now < next_sample_at then
+    reaper.defer(sample)
+    return
+  end
+  next_sample_at = now + interval_s
 
   local audio_xrun, media_xrun, current_ms = reaper.GetUnderrunTime()
   local audio_stamp_changed = audio_xrun ~= previous_audio

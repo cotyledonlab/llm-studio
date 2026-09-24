@@ -76,7 +76,8 @@ general plugin reproducibility, DAW responsiveness, or memory safety is claimed.
 The Gate B monitor reads the macOS `memory_pressure -Q` free-memory
 percentage and a read-only REAPER ReaScript probe. REAPER documents
 `GetUnderrunTime()` as the last audio/media underrun timestamps and current
-time, all in milliseconds. The probe samples it every 100 ms and records
+time, all in milliseconds. The deferred probe checks callback delay on every
+REAPER cycle, samples underrun timestamps every 100 ms, and records
 timestamp changes observed, the latest audio underrun age, and the largest
 delay between deferred callbacks. Timestamp age uses unsigned 32-bit
 millisecond wrap arithmetic; observed timestamp changes are a lower bound if
@@ -89,7 +90,8 @@ are not stopped by an admission pause.
 Run `tools/qualification/reaper_host_pressure_probe.lua` in the disposable
 REAPER profile while playback is active. It appends
 `llm-studio-host-pressure.jsonl` under that profile's resource directory. Run
-`reaper_host_pressure_probe_stop.lua` to stop sampling. Preserve the resource
+`reaper_host_pressure_probe_stop.lua` to stop sampling. The startup row is
+marked non-admitting until the first native sample arrives. Preserve the resource
 path and profile identity in the qualification record; do not run the probe in
 the producer-owned session.
 
