@@ -1,5 +1,49 @@
 # Current handoff — Gate A and B slices merged; acceptance remains open
 
+## 2026-09-24 parallel continuation status
+
+Draft PRs #38, #39, and #40 carry today's follow-up work; all three branches
+are pushed and remain open for review. PR #38 is `codex/gate-a-issue11` at
+`dfc569dc1a620d3b3e885555fe7e73935e1828cb`; PR #39 is
+`codex/gate-b-a07-reference-transient` at
+`9dcb326b560aca9fa7187d7643d33587638e8c33`; PR #40 is
+`codex/gate-b-host-monitor` at
+`1c00a4a06c98fbe706d1b9ef7a4bdacffe18bc9c`.
+
+Gate B now has bounded real SuperCollider reference scheduling and disposable
+REAPER import evidence. Across 12 requested events at 44.1 and 48 kHz, score
+offsets varied with 64-frame block phase; the 64-sample impulse position in
+the cropped clip is not reusable renderer latency. One converted reference
+clip imported at timeline frame 12000 with native readback confirming mono,
+48 kHz media and exact item placement. The first adapter response reported
+incomplete readback after import because of a tiny serialized-time difference;
+read-only native readback reconciled the already-created item, and no retry
+was sent. This evidence covers that reference path and clip only.
+
+The host monitor's one- and two-worker playback runs both completed their
+short SuperCollider drums/bass fixtures with zero observed xruns. Native stop
+and restart readbacks during the two-worker pair returned in 100.9 ms and
+77.4 ms. Host free memory was 42–45%; worker RSS was not sampled, no deliberate
+low-memory crossing or human listening check was performed, and the two-worker
+result applies only to these fixtures on this playback loop. The probe stop
+script exited 134 without a stopped row; the exact disposable process was
+terminated and the shared older producer instance was left untouched.
+
+Gate A's scope decision is that the eight-bar musical core tracer belongs to
+Gate C. A01 nevertheless remains partial: its guarded focus runner and OSC
+action-ID dispatch design are implemented, but the corrected action path has
+not passed a native live marker/readback check, and the complete focus-gated
+workflow remains unqualified. The disposable profile at
+`/private/tmp/llm-studio-reaper/a01-runner-verified-20260924/profile/resource`
+is still open as PID 27434. Its active tab inventory and dirty flags are
+unknown, so do not close or save it. Its pre-cleanup snapshot is
+`/private/tmp/llm-studio-reaper/a01-runner-verified-20260924/session-before-cleanup-snapshot.RPP`.
+Preserve the older producer instance. The historical 45-second renderer
+timeout remains unresolved; bounded successful reruns did not explain it.
+
+This section supersedes older lower entries where their Gate B status, A01
+scope, or disposable-process inventory differs. Keep issues #11 and #15 open.
+
 ## 2026-09-24 merged implementation slices
 
 PR #37 merged into `main` as `53669f1d` and PR #35 merged as `aced0931`.
