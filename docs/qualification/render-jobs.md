@@ -70,3 +70,58 @@ bundled with this repository. The retained `qualification.json` and immutable
 manifests contain exact audio hashes, versions, timings, and CPU/RSS readings.
 This evidence is bounded to the pinned host, plugin, state and fixtures. No
 general plugin reproducibility, DAW responsiveness, or memory safety is claimed.
+
+## Playback pressure sampler
+
+The Gate B monitor reads the macOS `memory_pressure -Q` free-memory
+percentage and a read-only REAPER ReaScript probe. REAPER documents
+`GetUnderrunTime()` as the last audio/media underrun timestamps and current
+time, all in milliseconds. The deferred probe checks callback delay on every
+REAPER cycle, samples underrun timestamps every 100 ms, and records
+timestamp changes observed, the latest audio underrun age, and the largest
+delay between deferred callbacks. Timestamp age uses unsigned 32-bit
+millisecond wrap arithmetic; observed timestamp changes are a lower bound if
+multiple events land between polls. The monitor pauses new job
+admission below 10% free memory, for 30 seconds after an audio underrun, or
+when either observation is missing or stale. These are conservative starting
+thresholds for qualification, not measured safe limits. Already-running jobs
+are not stopped by an admission pause.
+
+Run `tools/qualification/reaper_host_pressure_probe.lua` in the disposable
+REAPER profile while playback is active. It appends
+`llm-studio-host-pressure.jsonl` under that profile's resource directory. Run
+`reaper_host_pressure_probe_stop.lua` to stop sampling. The startup row is
+marked non-admitting until the first native sample arrives. Preserve the resource
+path and profile identity in the qualification record; do not run the probe in
+the producer-owned session.
+
+While that probe is active, compare one and two worker runs using the same
+fixture pair and fresh result/evidence paths:
+
+```sh
+PYTHONPATH=src:. python tools/qualification/render_job_native.py studio.drums.sc-basic-v1 \
+  --concurrent-with studio.bass.sc-pulse-v1 --max-workers 1 \
+  --reaper-resource-path /path/to/disposable/reaper-resource \
+  --pressure-evidence /private/tmp/gate-b-one-worker-pressure.jsonl \
+  --root /private/tmp/gate-b-one-worker
+```
+
+Repeat with `--max-workers 2` and new paths. The qualification report records
+worker start/end times and outcomes; the pressure log records free-memory
+percentage, observed xrun timestamp changes, probe age, and admission decisions. Compare playback
+continuity and producer control responsiveness in REAPER alongside those
+records. A zero-xrun result and small deferred-loop gaps are required for the
+selected worker count. The monitor does not claim to measure audible quality
+or substitute for the producer's playback observation.
+
+`HostPressureMonitor` is also available as a live admission callback:
+
+```python
+with HostPressureMonitor(reaper_probe_path, evidence_path=pressure_log) as pressure:
+    with RenderService(max_workers=1, admission_check=pressure.admit) as service:
+        ...
+```
+
+The host monitor is macOS-specific. Its free-memory percentage is an admission
+signal, not a per-process memory limit; the existing macOS worker memory-limit
+gap remains open.
