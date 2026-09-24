@@ -59,6 +59,53 @@ local function find_track(guid)
   end
 end
 
+local function staged_media_path(id, path)
+  local media = id:match('^(.*)/[^/]+$') .. '/media/'
+  local base = type(path) == 'string' and path:match('([^/]+)$') or ''
+  return #base == 68 and base:match('^[a-f0-9]+%.wav$')
+    and path == media .. base and canonical(path)
+end
+
+local function find_stem(track, item_guid)
+  if type(item_guid) ~= 'string' or item_guid == '' then return nil, 'item GUID required' end
+  for i = 0, reaper.CountTrackMediaItems(track) - 1 do
+    local item = reaper.GetTrackMediaItem(track, i)
+    local ok, guid = reaper.GetSetMediaItemInfo_String(item, 'GUID', '', false)
+    if ok and guid == item_guid then
+      if reaper.CountTakes(item) ~= 1 then return nil, 'single-take audio item required' end
+      local take = reaper.GetActiveTake(item)
+      local source = take and reaper.GetMediaItemTake_Source(take)
+      if not source then return nil, 'active audio source missing' end
+      local path = reaper.GetMediaSourceFileName(source, '')
+      local source_type = reaper.GetMediaSourceType(source, '')
+      local source_length, quarter_notes = reaper.GetMediaSourceLength(source)
+      local channels = reaper.GetMediaSourceNumChannels(source)
+      local sample_rate = reaper.GetMediaSourceSampleRate(source)
+      local position = reaper.GetMediaItemInfo_Value(item, 'D_POSITION')
+      local length = reaper.GetMediaItemInfo_Value(item, 'D_LENGTH')
+      local offset = reaper.GetMediaItemTakeInfo_Value(take, 'D_STARTOFFS')
+      local rate = reaper.GetMediaItemTakeInfo_Value(take, 'D_PLAYRATE')
+      local got_take_guid, take_guid = reaper.GetSetMediaItemTakeInfo_String(take, 'GUID', '', false)
+      if not got_take_guid or type(take_guid) ~= 'string' or take_guid == ''
+          or (source_type ~= 'WAVE' and source_type ~= 'WAV')
+          or quarter_notes or not finite(source_length) or not finite(position)
+          or not finite(length) or not finite(offset) or not finite(rate)
+          or not finite(channels) or channels < 1 or channels > 2
+          or not finite(sample_rate) or sample_rate < 8000
+          or offset ~= 0 or rate ~= 1 or math.abs(length - source_length) > 1e-6 then
+        return nil, 'unqualified item time/length/source configuration'
+      end
+      return {item=item, take=take, source=source, public={item_guid=guid,
+        take_guid=take_guid, track_guid=reaper.GetTrackGUID(track), source_path=path,
+        source_type=source_type,
+        position_sec=position, length_sec=length, channels=channels,
+        sample_rate=sample_rate,
+        state_change_count=reaper.GetProjectStateChangeCount(0)}}
+    end
+  end
+  return nil, 'item GUID absent from target track'
+end
+
 local function snapshot()
   local id, token = M.observe_session()
   local tracks = {}
@@ -263,6 +310,76 @@ local function automation_operation(op, p, track, id, token, op_id, done, fail)
   return done({observed=remember(after, id, token), receipt=receipt, undo_label=label})
 end
 
+local function stem_operation(op, p, track, id, token, op_id, done, fail)
+  local before, reason = find_stem(track, p.item_guid)
+  if not before then return fail('UNSUPPORTED', reason) end
+  if op == 'studio.read_stem' then return done(before.public) end
+  if not disposable() then return fail('UNSAFE_PROJECT', 'writes require a canonical disposable saved project') end
+  if reaper.GetPlayState() ~= 0 then return fail('UNSUPPORTED', 'stem replacement requires stopped transport') end
+  if type(p.expected) ~= 'table' or p.expected.item_guid ~= before.public.item_guid
+      or p.expected.take_guid ~= before.public.take_guid
+      or p.expected.track_guid ~= before.public.track_guid
+      or p.expected.source_path ~= before.public.source_path
+      or p.expected.source_type ~= before.public.source_type
+      or p.expected.position_sec ~= before.public.position_sec
+      or p.expected.length_sec ~= before.public.length_sec
+      or p.expected.channels ~= before.public.channels
+      or p.expected.sample_rate ~= before.public.sample_rate
+      or p.expected.state_change_count ~= before.public.state_change_count then
+    return fail('CONFLICT', 'stale or mismatched item observation; no source changed')
+  end
+  if not staged_media_path(id, p.stem_path) then
+    return fail('UNSAFE_ASSET', 'requires staged hash-addressed session WAV')
+  end
+  if p.stem_path == before.public.source_path then
+    return fail('BAD_REQUEST', 'replacement source matches current source')
+  end
+  local source = reaper.PCM_Source_CreateFromFile(p.stem_path)
+  if not source then return fail('IMPORT_FAILED', 'cannot load replacement source') end
+  local length, quarter_notes = reaper.GetMediaSourceLength(source)
+  local source_type = reaper.GetMediaSourceType(source, '')
+  local channels = reaper.GetMediaSourceNumChannels(source)
+  local sample_rate = reaper.GetMediaSourceSampleRate(source)
+  if (source_type ~= 'WAVE' and source_type ~= 'WAV')
+      or quarter_notes or not finite(length) or math.abs(length - before.public.length_sec) > 1e-6
+      or channels ~= before.public.channels or sample_rate ~= before.public.sample_rate then
+    reaper.PCM_Source_Destroy(source)
+    return fail('UNSUPPORTED', 'replacement must retain exact item duration')
+  end
+  -- All comparisons and the only project write occur inside one daemon callback.
+  reaper.Undo_BeginBlock2(0)
+  local changed = reaper.SetMediaItemTake_Source(before.take, source)
+  local after, after_error = find_stem(track, p.item_guid)
+  local valid = changed and after and after.public.source_path == p.stem_path
+    and after.public.item_guid == before.public.item_guid
+    and after.public.take_guid == before.public.take_guid
+    and after.public.position_sec == before.public.position_sec
+    and after.public.length_sec == before.public.length_sec
+  if not valid then
+    local attached = reaper.GetMediaItemTake_Source(before.take)
+    if attached ~= before.source then
+      local restored = reaper.SetMediaItemTake_Source(before.take, before.source)
+      if restored and attached then reaper.PCM_Source_Destroy(attached) end
+      after = find_stem(track, p.item_guid)
+      reaper.Undo_EndBlock2(0, 'LLM Studio failed stem replacement ' .. op_id, -1)
+      if not restored or not after or after.public.source_path ~= before.public.source_path then
+        return fail('VERIFY_FAILED', 'replacement readback failed; recovery uncertain')
+      end
+    else
+      reaper.PCM_Source_Destroy(source)
+      reaper.Undo_EndBlock2(0, 'LLM Studio failed stem replacement ' .. op_id, -1)
+    end
+    return fail('VERIFY_FAILED', 'replacement readback failed; original source preserved: ' .. tostring(after_error or ''))
+  end
+  reaper.Undo_EndBlock2(0, 'LLM Studio replace stem ' .. op_id, -1)
+  reaper.PCM_Source_Destroy(before.source)
+  local committed = find_stem(track, p.item_guid)
+  if not committed or committed.public.source_path ~= p.stem_path then
+    return fail('VERIFY_FAILED', 'replacement committed but post-transaction readback differs; inspect session')
+  end
+  return done({observed=committed.public, old_source_path=before.public.source_path})
+end
+
 function M.handle(op_id, req, reply_ok, reply_err)
   local op, p = req.op, req.params or {}
   if type(op) ~= 'string' or op:sub(1, 7) ~= 'studio.' then return false end
@@ -271,12 +388,14 @@ function M.handle(op_id, req, reply_ok, reply_err)
   if type(p) ~= 'table' then return fail('BAD_REQUEST', 'params must be an object') end
   if op == 'studio.session_snapshot' then return done(snapshot()) end
   local automation = op == 'studio.read_volume_envelope' or op == 'studio.patch_volume_envelope' or op == 'studio.undo_volume_patch'
-  if not automation and op ~= 'studio.get_track_state' and op ~= 'studio.set_mixer' and op ~= 'studio.import_stem' then return fail('UNSUPPORTED', op) end
+  local stem = op == 'studio.read_stem' or op == 'studio.replace_stem'
+  if not automation and not stem and op ~= 'studio.get_track_state' and op ~= 'studio.set_mixer' and op ~= 'studio.import_stem' then return fail('UNSUPPORTED', op) end
   local id, token = M.observe_session()
   if id == '' or p.session_id ~= id or p.session_token ~= token then return fail('SESSION_CHANGED', 'active loaded project differs') end
   local track, index = find_track(p.track_guid)
   if not track then return fail('TRACK_ORPHANED', 'track GUID absent') end
   if automation then return automation_operation(op, p, track, id, token, op_id, done, fail) end
+  if stem then return stem_operation(op, p, track, id, token, op_id, done, fail) end
   if op == 'studio.get_track_state' then
     local fx = {}
     for i = 0, reaper.TrackFX_GetCount(track) - 1 do
@@ -302,9 +421,7 @@ function M.handle(op_id, req, reply_ok, reply_err)
   end
   local position = p.position_sec or 0
   if not finite(position) or position < 0 then return fail('BAD_REQUEST', 'invalid position') end
-  local media = id:match('^(.*)/[^/]+$') .. '/media/'
-  local base = type(p.stem_path) == 'string' and p.stem_path:match('([^/]+)$') or ''
-  if #base ~= 68 or not base:match('^[a-f0-9]+%.wav$') or p.stem_path ~= media .. base or not canonical(p.stem_path) then return fail('UNSAFE_ASSET', 'requires staged hash-addressed session WAV') end
+  if not staged_media_path(id, p.stem_path) then return fail('UNSAFE_ASSET', 'requires staged hash-addressed session WAV') end
   local source = reaper.PCM_Source_CreateFromFile(p.stem_path)
   if not source then return fail('IMPORT_FAILED', 'cannot load staged source') end
   local length, quarter_notes = reaper.GetMediaSourceLength(source)
