@@ -71,6 +71,27 @@ with a 15-second bound, also completed in 1.983 seconds. The September 45-second
 timeout is therefore **not reproduced or explained**; the prior failure is
 retained as a reliability limitation rather than erased.
 
+On 2026-09-24, the controller call was rerun with process, stdout, stderr,
+elapsed time, and output hash captured. `reaper_connector.audio.render_project`
+has no profile parameter; it invokes `[BIN_PATH, "-renderproject", target]`
+without `-cfgfile`. Against a copied five-second A4 RPP with a 45-second
+timeout, this exact library path exited 0 in 1.914 seconds and produced a
+1,323,690-byte WAV (SHA256
+`f324d3d307458d88eeaf020bf1f9aa972fffae5a48763f4b76c52185f88ef3e1`).
+The only stderr was REAPER's Metal device initialization message. The captured
+run evidence is `/private/tmp/llm-studio-reaper/renderer-timeout-rerun-20260924/controller-call-evidence.json`.
+
+A preceding sandboxed default-profile launch aborted in 0.125 seconds while
+macOS registered the REAPER process; its crash report identifies
+`___RegisterApplication_block_invoke`, and it wrote no WAV. A run of the same
+fixture with a newly created disposable profile and a 30-second bound exited 0
+in 18.977 seconds. These controlled runs did not reproduce the historical
+45-second timeout. The immediate sandbox-specific abort and slower first run
+with a fresh profile do not explain the historical failure, whose exact input
+and process output were not retained. Keep the timeout unresolved. Further
+controller probes can set an explicit profile only by wrapping or changing the
+controller's process invocation.
+
 Three isolated RPP copies, each muting the other two tracks, rendered aligned
 Keys, Bass and Drums exports. All had the same sample rate and 220,500-frame
 bounds. Their sum differed from the stereo mix by at most one 24-bit sample
