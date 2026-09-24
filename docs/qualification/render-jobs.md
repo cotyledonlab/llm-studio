@@ -74,9 +74,13 @@ general plugin reproducibility, DAW responsiveness, or memory safety is claimed.
 ## Playback pressure sampler
 
 The Gate B monitor reads the macOS `memory_pressure -Q` free-memory
-percentage and a read-only REAPER ReaScript probe. The probe samples
-`GetUnderrunTime()` every 100 ms and records changes in audio/media underruns
-plus the largest delay between deferred callbacks. The monitor pauses new job
+percentage and a read-only REAPER ReaScript probe. REAPER documents
+`GetUnderrunTime()` as the last audio/media underrun timestamps and current
+time, all in milliseconds. The probe samples it every 100 ms and records
+timestamp changes observed, the latest audio underrun age, and the largest
+delay between deferred callbacks. Timestamp age uses unsigned 32-bit
+millisecond wrap arithmetic; observed timestamp changes are a lower bound if
+multiple events land between polls. The monitor pauses new job
 admission below 10% free memory, for 30 seconds after an audio underrun, or
 when either observation is missing or stale. These are conservative starting
 thresholds for qualification, not measured safe limits. Already-running jobs
@@ -102,7 +106,7 @@ PYTHONPATH=src:. python tools/qualification/render_job_native.py studio.drums.sc
 
 Repeat with `--max-workers 2` and new paths. The qualification report records
 worker start/end times and outcomes; the pressure log records free-memory
-percentage, xrun counts, probe age, and admission decisions. Compare playback
+percentage, observed xrun timestamp changes, probe age, and admission decisions. Compare playback
 continuity and producer control responsiveness in REAPER alongside those
 records. A zero-xrun result and small deferred-loop gaps are required for the
 selected worker count. The monitor does not claim to measure audible quality

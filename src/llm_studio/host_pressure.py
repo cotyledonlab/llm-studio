@@ -28,7 +28,7 @@ class HostPressureSnapshot:
     memory_free_percent: int | None
     audio_xrun_events: int | None
     media_xrun_events: int | None
-    latest_audio_xrun_epoch: float | None
+    latest_audio_xrun_age_ms: int | None
     probe_age_s: float | None
     admitted: bool
     reasons: tuple[str, ...]
@@ -58,14 +58,15 @@ def _latest_probe(path: Path) -> tuple[dict | None, float | None]:
             lines = stream.read().splitlines()
     except FileNotFoundError:
         return None, None
-    for line in reversed(lines):
-        try:
-            sample = json.loads(line)
-        except (UnicodeDecodeError, json.JSONDecodeError):
-            continue
-        if isinstance(sample, dict) and "audio_xrun_events" in sample:
-            return sample, max(0.0, time.time() - stat.st_mtime)
-    return None, max(0.0, time.time() - stat.st_mtime)
+    if not lines:
+        return None, max(0.0, time.time() - stat.st_mtime)
+    try:
+        sample = json.loads(lines[-1])
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("latest REAPER probe row is malformed") from exc
+    if not isinstance(sample, dict) or "audio_xrun_events" not in sample:
+        raise ValueError("latest REAPER probe row has an invalid shape")
+    return sample, max(0.0, time.time() - stat.st_mtime)
 
 
 class HostPressureMonitor:
@@ -85,6 +86,7 @@ class HostPressureMonitor:
         xrun_cooldown_s: float = 30.0,
         sample_interval_s: float = 1.0,
         probe_max_age_s: float = 3.0,
+        snapshot_max_age_s: float | None = None,
         memory_reader: Callable[[], int] = memory_free_percent,
     ) -> None:
         if not 0 <= minimum_free_percent <= 100:
@@ -99,10 +101,17 @@ class HostPressureMonitor:
         self.xrun_cooldown_s = xrun_cooldown_s
         self.sample_interval_s = sample_interval_s
         self.probe_max_age_s = probe_max_age_s
+        self.snapshot_max_age_s = (
+            snapshot_max_age_s if snapshot_max_age_s is not None
+            else max(3.0 * sample_interval_s, probe_max_age_s)
+        )
+        if self.snapshot_max_age_s <= 0:
+            raise ValueError("snapshot_max_age_s must be positive")
         self.memory_reader = memory_reader
         self._stop = threading.Event()
         self._lock = threading.Lock()
         self._snapshot: HostPressureSnapshot | None = None
+        self._snapshot_monotonic: float | None = None
         self._thread: threading.Thread | None = None
 
     def start(self) -> "HostPressureMonitor":
@@ -130,13 +139,38 @@ class HostPressureMonitor:
             return self._snapshot
 
     def admit(self, _job: object) -> bool:
-        current = self.snapshot()
-        return current is not None and current.admitted
+        thread = self._thread
+        with self._lock:
+            current = self._snapshot
+            sampled_at = self._snapshot_monotonic
+        if current is None or thread is None or not thread.is_alive() or sampled_at is None:
+            return False
+        if time.monotonic() - sampled_at > self.snapshot_max_age_s:
+            return False
+        return current.admitted
 
     def _run(self) -> None:
         while not self._stop.is_set():
-            self._sample()
+            try:
+                self._sample()
+            except Exception as exc:
+                self._publish_failure(f"sampler_failed:{type(exc).__name__}:{exc}")
             self._stop.wait(self.sample_interval_s)
+
+    def _publish_failure(self, reason: str) -> None:
+        value = HostPressureSnapshot(
+            observed_at=datetime.now(UTC).isoformat(),
+            memory_free_percent=None,
+            audio_xrun_events=None,
+            media_xrun_events=None,
+            latest_audio_xrun_age_ms=None,
+            probe_age_s=None,
+            admitted=False,
+            reasons=(reason,),
+        )
+        with self._lock:
+            self._snapshot = value
+            self._snapshot_monotonic = time.monotonic()
 
     def _sample(self) -> None:
         reasons: list[str] = []
@@ -153,15 +187,15 @@ class HostPressureMonitor:
         probe, age = _latest_probe(self.reaper_probe_path)
         if probe is None or age is None or age > self.probe_max_age_s:
             audio_events = media_events = None
-            latest_audio = None
+            latest_audio_age = None
             reasons.append("reaper_probe_missing_or_stale")
         else:
-            audio_events = int(probe["audio_xrun_events"])
-            media_events = int(probe.get("media_xrun_events", 0))
-            latest_audio = probe.get("latest_audio_xrun_epoch")
-            if age > self.probe_max_age_s:
-                reasons.append("reaper_probe_stale")
-            if latest_audio is not None and time.time() - float(latest_audio) < self.xrun_cooldown_s:
+            if probe.get("probe_running") is not True:
+                reasons.append("reaper_probe_stopped")
+            audio_events = _integer(probe, "audio_xrun_events")
+            media_events = _integer(probe, "media_xrun_events")
+            latest_audio_age = _integer(probe, "latest_audio_xrun_age_ms", allow_none=True)
+            if latest_audio_age is not None and latest_audio_age < self.xrun_cooldown_s * 1000:
                 reasons.append("recent_audio_xrun")
 
         value = HostPressureSnapshot(
@@ -169,17 +203,38 @@ class HostPressureMonitor:
             memory_free_percent=free,
             audio_xrun_events=audio_events,
             media_xrun_events=media_events,
-            latest_audio_xrun_epoch=latest_audio,
+            latest_audio_xrun_age_ms=latest_audio_age,
             probe_age_s=age,
             admitted=not reasons,
             reasons=tuple(reasons),
         )
+        if self.evidence_path is not None:
+            try:
+                self.evidence_path.parent.mkdir(parents=True, exist_ok=True)
+                with self.evidence_path.open("a", encoding="utf-8") as stream:
+                    stream.write(json.dumps(asdict(value), sort_keys=True) + "\n")
+            except Exception as exc:
+                value = HostPressureSnapshot(
+                    **{
+                        **asdict(value),
+                        "admitted": False,
+                        "reasons": (*value.reasons, f"evidence_write_failed:{type(exc).__name__}:{exc}"),
+                    }
+                )
         with self._lock:
             self._snapshot = value
-        if self.evidence_path is not None:
-            self.evidence_path.parent.mkdir(parents=True, exist_ok=True)
-            with self.evidence_path.open("a", encoding="utf-8") as stream:
-                stream.write(json.dumps(asdict(value), sort_keys=True) + "\n")
+            self._snapshot_monotonic = time.monotonic()
+
+
+def _integer(value: dict, key: str, *, allow_none: bool = False) -> int | None:
+    raw = value.get(key)
+    if raw is None and allow_none:
+        return None
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)) or int(raw) != raw:
+        raise ValueError(f"invalid {key} in REAPER probe")
+    if int(raw) < 0:
+        raise ValueError(f"negative {key} in REAPER probe")
+    return int(raw)
 
 
 def resource_probe_path(reaper_resource_path: Path) -> Path:
