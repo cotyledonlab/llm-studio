@@ -363,6 +363,51 @@ automation. Record native/API readbacks and the result of each operation
 alongside its focus observations. Keep the session and any render outputs in
 the disposable qualification directory.
 
+The guarded runner is `tools/qualification/reaper_a01.py`. It copies a source
+RPP and media to a new directory below `/private/tmp/llm-studio-reaper`, creates
+an isolated bridge profile and separate render profile, and verifies the
+pinned controller checkout before running. Each automated call is gated by
+frontmost-app observations before, during, and after the operation; REAPER and
+the macOS login window both fail the gate. The runner writes `a01-focus.jsonl`
+per-step receipts and focus samples, `a01-evidence.json` on success, and
+`a01-failure.json` plus the journal hash on an incomplete run. It refuses to
+reuse a fixture or its evidence paths.
+
+After profile preparation, John must start REAPER with that exact profile and
+the copied `session.RPP`, load `Scripts/agent_bridge.lua` from the Actions list,
+and complete any first-run audio-device selection. Keep only the disposable
+project tab open. The automated run must begin with a user application other
+than REAPER frontmost. During the explicit manual handoff, move Bass to about
+−2.99 dB while retaining pan −0.2, and move the existing Keys volume point at
+2.0 seconds to about −28 dB while retaining the 1s and 3s boundary points. Then
+switch to another app before returning to the runner. Do not treat setup or
+fixture preparation as A01 acceptance; the focus-gated live sequence and its
+render/fidelity checks still need to complete.
+
+Use the `root` printed by `prepare` for the remaining commands:
+
+```sh
+python3 tools/qualification/reaper_a01.py prepare \
+  --source-project /private/tmp/llm-studio-reaper/<qualified-source>/session.RPP \
+  --root /private/tmp/llm-studio-reaper/<new-a01-run>
+python3 tools/qualification/reaper_a01.py prepare-profile \
+  --root /private/tmp/llm-studio-reaper/<new-a01-run> \
+  --controller /private/tmp/reaper-controller-fd56 \
+  --license-source /private/tmp/llm-studio-reaper/<licensed-profile>/resource/reaper-license.rk
+/Applications/REAPER.app/Contents/MacOS/REAPER \
+  -cfgfile /private/tmp/llm-studio-reaper/<new-a01-run>/profile/resource/reaper.ini \
+  -nonewinst -noactivate /private/tmp/llm-studio-reaper/<new-a01-run>/session.RPP
+python3 tools/qualification/reaper_a01.py run \
+  --root /private/tmp/llm-studio-reaper/<new-a01-run> \
+  --controller /private/tmp/reaper-controller-fd56 \
+  --resource /private/tmp/llm-studio-reaper/<new-a01-run>/profile/resource
+```
+
+The placeholders above must be replaced with a new run directory and the
+already qualified disposable source/profile paths; the runner refuses reused
+outputs. Run all commands from the project checkout. Setup actions that need
+REAPER in front must be finished before `run` begins.
+
 1. Demonstrate the complete Gate A DAW workflow through APIs/protocols while
    another application is frontmost for every automated API/protocol step;
    record focus immediately before and after each step. REAPER may be
