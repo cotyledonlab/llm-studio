@@ -48,7 +48,8 @@ zero-phase finite-sinc sample-rate conversion, zero padding through the longest
 tail, and explicit measured-latency compensation. Synthetic mono 44.1 kHz and
 stereo 48 kHz transient fixtures, plus a 96-to-48 kHz conversion, align peaks
 within one output sample without per-stem normalization. This tests the
-algorithm and mixed layouts, **not** the required A07 real-renderer calibration.
+algorithm and mixed layouts, **not** the required REAPER import readback for
+A07.
 The catalogue's 33-sample SuperCollider and 57-sample Dexed onset measurements
 are thresholded musical attacks, not isolated reference transients. They must
 not be used as automatic latency compensation. The custom SuperCollider
