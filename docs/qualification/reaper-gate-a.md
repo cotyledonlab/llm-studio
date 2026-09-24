@@ -345,11 +345,14 @@ the producer.
 1. Resolve A01's scope before using Gate A as a prerequisite for Gate C. A01
    literally requires a complete core tracer while another application has
    keyboard focus, while the implementation plan places the musical tracer in
-   Gate C. The existing API-only A3/A4 checks support the architecture but do
-   not complete that tracer. Keep A01 partial until the producer decides the
-   gate boundary or the tracer is demonstrated.
+   Gate C, creating a circular dependency in the current gate ordering. The
+   existing repository has no musical-tracer implementation or qualification
+   report; API-only A3/A4 checks support the architecture but do not complete
+   that tracer. Keep A01 partial until the producer decides the gate boundary
+   or the Gate C tracer is implemented and demonstrated through APIs/protocols
+   while another application has keyboard focus.
 2. Complete or explicitly narrow the remaining partial capabilities in the
    matrix. Never repeat the accepted replacement on an already changed tab.
 3. Do not replace a script in the running producer profile.
-4. Keep the historical renderer timeout as unresolved unless a bounded
-   reproduction explains it.
+4. Keep the historical renderer timeout as unresolved. Bounded reruns on a
+   disposable fixture succeeded, but did not explain the earlier timeout.
