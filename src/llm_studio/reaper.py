@@ -79,6 +79,12 @@ class ReaperStudioAdapter:
     Envelope receipts are bounded qualification operations, not coordinator write leases.
     """
 
+    @staticmethod
+    def _serialized_time_matches(actual: Any, requested: float) -> bool:
+        # REAPER's RPP serializer writes item/envelope times to eight decimal
+        # places. Allow only the resulting bounded serialization noise.
+        return _number(actual) and abs(actual - requested) <= 5.1e-9
+
     def __init__(self, bridge_send: Callable, *, disposable_roots: tuple[Path, ...] | None = None):
         self._bridge_send = bridge_send
         roots = disposable_roots if disposable_roots is not None else (
@@ -295,7 +301,7 @@ class ReaperStudioAdapter:
         params = self._params(session, guid)
         destination = self._stage_stem(session, stem)
         result = self._send('studio.import_stem', {**params, 'stem_path': str(destination), 'position_sec': position_sec})
-        if result.get('durable_path') != str(destination) or result.get('track_guid') != guid or not isinstance(result.get('item_guid'), str) or not result['item_guid'] or not _number(result.get('length_sec')) or result['length_sec'] <= 0 or result.get('position_sec') != position_sec:
+        if result.get('durable_path') != str(destination) or result.get('track_guid') != guid or not isinstance(result.get('item_guid'), str) or not result['item_guid'] or not _number(result.get('length_sec')) or result['length_sec'] <= 0 or not self._serialized_time_matches(result.get('position_sec'), position_sec):
             raise ReaperAdapterError('incomplete media readback; do not retry blindly')
         return result
 
@@ -337,7 +343,7 @@ class ReaperStudioAdapter:
         if (observed['take_guid'] != expected['take_guid']
                 or observed['source_path'] != str(destination)
                 or observed['source_type'] != expected['source_type']
-                or observed['position_sec'] != expected['position_sec']
+                or not self._serialized_time_matches(observed['position_sec'], expected['position_sec'])
                 or observed['length_sec'] != expected['length_sec']
                 or observed['channels'] != expected['channels']
                 or observed['sample_rate'] != expected['sample_rate']
