@@ -1,6 +1,6 @@
 # REAPER Gate A / issue #11 qualification
 
-Updated: 2026-09-23. **The installed A4 replacement, save/reopen, and export
+Updated: 2026-09-24. **The installed A4 replacement, save/reopen, and export
 passed on a disposable copy; Gate A is not yet accepted.** The human Bass move
 was observed and preserved. Bridge owner recovery passed in a separate
 disposable profile; wider Gate A coverage remains open. This report does not
@@ -280,7 +280,7 @@ by itself establish the complete producer workflow.
 
 | SPEC ID | Capability | Status and evidence |
 |---|---|---|
-| A01 | Complete Gate A DAW workflow through APIs/protocols without GUI automation | **Partial.** John clarified on 2026-09-24 that A01 covers the complete Gate A DAW workflow while another application has keyboard focus; the eight-bar musical tracer remains Gate C. Existing A3/A4 work used native APIs, ReaScript, file-drop transport, or CLI on disposable copies, but the full Gate A workflow has not been demonstrated as one no-GUI run with focus observed. |
+| A01 | Complete Gate A DAW workflow through APIs/protocols without GUI automation | **Partial.** John clarified on 2026-09-24 that A01 covers the complete Gate A DAW workflow; the eight-bar musical tracer remains Gate C. A different app must be frontmost during each automated API/protocol step. REAPER may be frontmost during John's manual fader and envelope edits. Existing A3/A4 work used native APIs, ReaScript, file-drop transport, or CLI on disposable copies, but the full workflow has not been demonstrated with focus evidence bracketing its automated steps. |
 | A02 | Manual Bass gain survives generation and accepted drum replacement | **Passed for the disposable A4 copy.** John's fader move was observed and saved. The installed replacement preserved exact silent Bass gain, pan, and ReaEQ through independent readback, native save, and reopen. The broader producer workflow is unqualified. |
 | A03 | Manual Keys envelope survives unrelated edits, restart and export | **Prior A3 evidence plus disposable A4 pass.** The issue #10 qualification records John's manual Keys points, byte-identical copy, unrelated edits, save/reopen, and audible export. A4 preserved the earlier copied Keys lane through installed Drums replacement, save/reopen, and aligned export. The later `a3-probe` point was not recovered. |
 | A04 | Overlapping edit blocks stale proposal without overwriting points | **Prior A3 evidence.** The corrected producer-edit run returned `CONFLICT` and preserved John's edited envelope chunk exactly. Earlier programmatic conflict checks also passed. |
@@ -336,18 +336,41 @@ explain or resolve that reliability failure.
 A4 manual-gain, installed replacement, reopen, and zero-extra-tail export slice
 passes in a disposable project. A05, A06, and A15 now pass within the stated
 disposable-fixture bounds. A01 remains partial, and the historical renderer
-timeout has no diagnosis. Keep PR #37 draft
-and issue #11 open while those checks are resolved or explicitly narrowed by
-the producer.
+timeout has no diagnosis. PR #37 has merged; issue #11 remains open while those
+checks are resolved or explicitly narrowed by the producer.
 
 ## Remaining acceptance
 
+### A01 run plan
+
+Use one disposable session on the pinned Mac/build. For every automated
+API/protocol step, record the timestamp, frontmost application's name, bundle
+ID and process ID immediately before and after the call. Read this metadata
+through `NSWorkspace.frontmostApplication`; do not activate applications or
+drive their interfaces from the qualification script. A step counts only when
+the frontmost process is not REAPER for both observations. If it is, pause and
+have John select another application manually before issuing the automated
+call. REAPER may be frontmost during John's fader and envelope edits; move
+focus back manually before the next automated call.
+
+Run the Gate A sequence from SPEC §16: pin/doctor and bootstrap; bind the
+disposable session and read stable track GUIDs; insert a stem and read/set
+gain/pan; observe John's manual fader and envelope edits; apply and observe a
+bounded envelope edit, undo, save and reopen; inject a stale-target conflict
+and verify preserved points; replace a part while retaining channel controls;
+render a stereo export and check that it reflects the manual mix and
+automation. Record native/API readbacks and the result of each operation
+alongside its focus observations. Keep the session and any render outputs in
+the disposable qualification directory.
+
 1. Demonstrate the complete Gate A DAW workflow through APIs/protocols while
-   another application has keyboard focus. John clarified on 2026-09-24 that
-   the eight-bar musical tracer remains Gate C. Existing API-only A3/A4 runs
-   provide bounded evidence for several steps, but no run has covered the
-   complete Gate A workflow with focus observed. Keep A01 partial until that
-   demonstration is recorded.
+   another application is frontmost for every automated API/protocol step;
+   record focus immediately before and after each step. REAPER may be
+   frontmost during John's manual fader and envelope edits. John clarified
+   that the eight-bar musical tracer remains Gate C. Existing API-only A3/A4
+   runs provide bounded evidence for several steps, but they do not have
+   focus evidence. Keep A01 partial until the complete workflow is recorded
+   with this focus condition.
 2. Complete or explicitly narrow the remaining partial capabilities in the
    matrix. Never repeat the accepted replacement on an already changed tab.
 3. Do not replace a script in the running producer profile.

@@ -399,7 +399,7 @@ No broad plugin catalogue, generalized multi-DAW abstraction, mobile console or 
 
 | ID | Scenario | Pass condition |
 |---|---|---|
-| A01 | No computer use | Complete the Gate A DAW workflow through APIs/protocols while another application has keyboard focus. The eight-bar musical tracer is Gate C. |
+| A01 | No computer use | Complete the Gate A DAW workflow through APIs/protocols. Keep a different application frontmost during each automated API/protocol step and record focus evidence before and after it. REAPER may be frontmost during John's manual fader and envelope edits. The eight-bar musical tracer is Gate C. |
 | A02 | Human mixer authority | Manual bass gain survives generation and accepted drum replacement. |
 | A03 | Human automation authority | Manual keys envelope survives unrelated edits, restart and export. |
 | A04 | Stale proposal | Overlapping external edit prevents application with no overwritten points. |
