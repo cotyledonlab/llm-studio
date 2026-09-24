@@ -20,6 +20,10 @@ def main() -> int:
     apply = commands.add_parser("bootstrap-apply", help="Apply a previously reviewed plan while REAPER is stopped")
     apply.add_argument("plan", type=Path)
     apply.add_argument("--receipt", type=Path, required=True)
+    apply.add_argument(
+        "--isolated-empty-profile", action="store_true",
+        help="allow apply to an empty disposable resource under /private/tmp/llm-studio-reaper when fresh process checks prove that exact resource is unused",
+    )
     for name in ("bootstrap-verify", "bootstrap-rollback"):
         command = commands.add_parser(name)
         command.add_argument("receipt", type=Path)
@@ -33,7 +37,10 @@ def main() -> int:
             bootstrap.save_plan(prepared, args.output)
             result = bootstrap.dry_run(prepared)
         elif args.command == "bootstrap-apply":
-            installed = bootstrap.apply(bootstrap.load_plan(args.plan))
+            installed = bootstrap.apply(
+                bootstrap.load_plan(args.plan),
+                isolated_empty_profile=args.isolated_empty_profile,
+            )
             bootstrap.save_result(installed, args.receipt)
             result = {"receipt": str(args.receipt), "backup_dir": str(installed.backup_dir),
                       "changed": installed.changed, "unchanged": installed.unchanged}

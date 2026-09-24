@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import time
@@ -23,6 +24,7 @@ from typing import Callable
 
 
 PINNED_CONTROLLER_COMMIT = "fd56d0008ffa5fba25cc58a70e5ae632c80b4c16"
+ISOLATED_PROFILE_ROOT = Path("/private/tmp/llm-studio-reaper")
 OSC_AGENT_LINE = 'OSC "Agent" 3 8000 "127.0.0.1" 9000 1024 10 "Agent"'
 
 
@@ -248,7 +250,9 @@ def plan_bootstrap(resource_path: Path, controller_path: Path, project_path: Pat
         target = _safe_target(resource_path, relative)
         files.append(PlannedFile(relative, content, _sha256(content), _file_hash(target), reason))
     return BootstrapPlan(
-        resource_path=resource_path.resolve(),
+        # Preserve the lexical absolute resource path so the opt-in isolated
+        # apply path can still detect symlinked parent components.
+        resource_path=Path(os.path.abspath(resource_path)),
         controller_path=controller_path.resolve(),
         controller_commit=commit,
         files=tuple(files),
@@ -289,9 +293,126 @@ def reaper_running() -> bool:
         raise UnsafeBootstrap(f"cannot determine whether REAPER is running: {exc}") from exc
 
 
-def apply(plan: BootstrapPlan, *, running: Callable[[], bool] = reaper_running) -> BootstrapResult:
+def _validate_isolated_empty_resource(resource_path: Path, plan: BootstrapPlan) -> Path:
+    """Validate the narrow opt-in destination before checking process ownership."""
+    requested = Path(os.path.abspath(resource_path))
+    allowed_root = ISOLATED_PROFILE_ROOT
+    try:
+        requested.relative_to(allowed_root)
+    except ValueError as exc:
+        raise UnsafeBootstrap("isolated profile resource must be under /private/tmp/llm-studio-reaper") from exc
+    if requested == allowed_root:
+        raise UnsafeBootstrap("isolated profile resource must be a new child under /private/tmp/llm-studio-reaper")
+    current = Path("/")
+    for part in requested.parts[1:]:
+        current = current / part
+        if current.is_symlink():
+            raise UnsafeBootstrap(f"isolated profile path contains symlink: {current}")
+    if requested.resolve() != requested or not requested.is_dir():
+        raise UnsafeBootstrap("isolated profile resource must be an existing canonical directory")
+    if any(requested.iterdir()):
+        raise UnsafeBootstrap("isolated profile resource must be empty")
+    if any(item.before_hash is not None for item in plan.files):
+        raise UnsafeBootstrap("isolated profile plan must target only absent files")
+    if requested != plan.resource_path:
+        raise UnsafeBootstrap("isolated profile plan resource path does not match")
+    return requested
+
+
+def isolated_profile_running(resource_path: Path) -> bool:
+    """Fail-closed check that no REAPER argv names this isolated resource."""
+    try:
+        pgrep = subprocess.run(
+            ["pgrep", "-x", "REAPER"], capture_output=True, text=True, timeout=5
+        )
+        ps = subprocess.run(
+            ["ps", "-ww", "-axo", "pid=,command="], capture_output=True, text=True, timeout=5
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise UnsafeBootstrap(f"cannot inspect REAPER process arguments: {exc}") from exc
+    if ps.returncode != 0:
+        raise UnsafeBootstrap(f"REAPER process argument probe returned status {ps.returncode}")
+    if pgrep.returncode not in (0, 1):
+        raise UnsafeBootstrap(f"REAPER process probe returned status {pgrep.returncode}")
+    try:
+        pid_lines = [line.strip() for line in pgrep.stdout.splitlines() if line.strip()]
+        matched_pid_list = [int(line) for line in pid_lines]
+        matched_pids = set(matched_pid_list)
+        if len(matched_pids) != len(matched_pid_list):
+            raise ValueError("duplicate REAPER PID")
+        if pgrep.returncode == 0 and not matched_pids:
+            raise ValueError("empty pgrep result")
+        if pgrep.returncode == 1 and matched_pids:
+            raise ValueError("inconsistent pgrep result")
+        ps_rows: dict[int, str] = {}
+        named_reaper: set[int] = set()
+        for line in ps.stdout.splitlines():
+            fields = line.strip().split(None, 1)
+            if len(fields) != 2:
+                if line.strip():
+                    raise ValueError("malformed ps row")
+                continue
+            pid = int(fields[0])
+            if pid in ps_rows:
+                raise ValueError("duplicate ps PID")
+            ps_rows[pid] = fields[1]
+            executable = fields[1].split(None, 1)[0]
+            if Path(executable).name == "REAPER":
+                named_reaper.add(pid)
+        if not matched_pids.issubset(ps_rows):
+            raise ValueError("ps did not report every REAPER PID")
+        if named_reaper != matched_pids:
+            raise ValueError("pgrep and ps disagree about REAPER processes")
+    except (ValueError, OSError) as exc:
+        raise UnsafeBootstrap(f"cannot validate REAPER process arguments: {exc}") from exc
+
+    expected_cfg = Path(resource_path, "reaper.ini").resolve(strict=False)
+    for pid in matched_pids:
+        try:
+            argv = shlex.split(ps_rows[pid])
+        except ValueError as exc:
+            raise UnsafeBootstrap(f"REAPER PID {pid} has malformed argv: {exc}") from exc
+        if not argv or not Path(argv[0]).is_absolute() or Path(argv[0]).name != "REAPER":
+            raise UnsafeBootstrap(f"REAPER PID {pid} has an unrecognized executable argv")
+        cfg_values: list[str] = []
+        index = 1
+        while index < len(argv):
+            arg = argv[index]
+            if arg == "-cfgfile":
+                if index + 1 >= len(argv) or argv[index + 1].startswith("-"):
+                    raise UnsafeBootstrap(f"REAPER PID {pid} has incomplete -cfgfile arguments")
+                cfg_values.append(argv[index + 1])
+                index += 2
+                continue
+            if arg.startswith("-cfgfile="):
+                value = arg.partition("=")[2]
+                if not value:
+                    raise UnsafeBootstrap(f"REAPER PID {pid} has incomplete -cfgfile arguments")
+                cfg_values.append(value)
+            elif arg.startswith("-cfgfile"):
+                raise UnsafeBootstrap(f"REAPER PID {pid} has unrecognized -cfgfile argv")
+            index += 1
+        if len(cfg_values) != 1:
+            raise UnsafeBootstrap(f"REAPER PID {pid} must have exactly one -cfgfile value")
+        cfg = Path(cfg_values[0])
+        if not cfg.is_absolute():
+            raise UnsafeBootstrap(f"REAPER PID {pid} has a relative -cfgfile value")
+        if cfg.resolve(strict=False) == expected_cfg:
+            return True
+    return False
+
+
+def apply(
+    plan: BootstrapPlan,
+    *,
+    running: Callable[[], bool] = reaper_running,
+    isolated_empty_profile: bool = False,
+) -> BootstrapResult:
     """Apply a reviewed plan after all source and target preconditions hold."""
-    if running():
+    isolated_resource = None
+    if isolated_empty_profile:
+        isolated_resource = _validate_isolated_empty_resource(plan.resource_path, plan)
+    elif running():
         raise UnsafeBootstrap("REAPER appears to be running; refusing configuration writes")
     if _controller_identity(plan.controller_path) != plan.controller_commit:
         raise BootstrapError("controller identity changed since plan")
@@ -305,6 +426,10 @@ def apply(plan: BootstrapPlan, *, running: Callable[[], bool] = reaper_running) 
         directory = _safe_target(plan.resource_path, relative)
         if directory.exists() and not directory.is_dir():
             raise UnsafeBootstrap(f"managed queue path is not a directory: {directory}")
+    if isolated_resource is not None:
+        isolated_resource = _validate_isolated_empty_resource(plan.resource_path, plan)
+        if isolated_profile_running(isolated_resource):
+            raise UnsafeBootstrap("REAPER is using the isolated profile resource; refusing configuration writes")
     changing = [item for item in plan.files if item.before_hash != item.after_hash]
     if not changing:
         for relative in plan.created_dirs:

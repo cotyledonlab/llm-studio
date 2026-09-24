@@ -254,10 +254,25 @@ class ReaperStudioAdapter:
             raise ReaperAdapterError('missing patch receipt/readback; do not retry blindly')
         observed = self._envelope_observed(observed, guid, start, end)
         if len(observed['points']) != len(encoded) or any(
-                actual['time_sec'] != wanted['time_sec'] or not math.isclose(actual['volume'], wanted['volume'], rel_tol=1e-9, abs_tol=1e-12)
+                not self._patch_point_matches(actual, wanted)
                 for actual, wanted in zip(observed['points'], encoded)):
             raise ReaperAdapterError('patch readback differs; do not retry blindly')
         return {**result, 'observed': observed}
+
+    @staticmethod
+    def _patch_point_matches(actual: Mapping[str, Any], wanted: Mapping[str, Any]) -> bool:
+        # REAPER serializes envelope time and gain to eight decimal places.
+        # Allow only that serialization noise; preserve strict silence parity.
+        if abs(actual['time_sec'] - wanted['time_sec']) > 5.1e-9:
+            return False
+        actual_volume, wanted_volume = actual['volume'], wanted['volume']
+        if (actual_volume == 0) != (wanted_volume == 0):
+            return False
+        if actual_volume == 0:
+            return True
+        actual_db = 20 * math.log10(actual_volume)
+        wanted_db = 20 * math.log10(wanted_volume)
+        return abs(actual_db - wanted_db) <= 1e-6
 
     def undo_volume_patch(self, session: Session, guid: str, patch: Mapping[str, Any]) -> Mapping[str, Any]:
         """Restore the prior envelope in a checked compensating transaction."""
@@ -278,6 +293,59 @@ class ReaperStudioAdapter:
         if not _number(position_sec) or position_sec < 0:
             raise ValueError('position_sec must be finite and nonnegative')
         params = self._params(session, guid)
+        destination = self._stage_stem(session, stem)
+        result = self._send('studio.import_stem', {**params, 'stem_path': str(destination), 'position_sec': position_sec})
+        if result.get('durable_path') != str(destination) or result.get('track_guid') != guid or not isinstance(result.get('item_guid'), str) or not result['item_guid'] or not _number(result.get('length_sec')) or result['length_sec'] <= 0 or result.get('position_sec') != position_sec:
+            raise ReaperAdapterError('incomplete media readback; do not retry blindly')
+        return result
+
+    @staticmethod
+    def _stem_observed(result: Mapping[str, Any], guid: str, item_guid: str) -> dict:
+        if (not isinstance(result, Mapping) or result.get('track_guid') != guid
+                or result.get('item_guid') != item_guid
+                or not isinstance(result.get('take_guid'), str) or not result['take_guid']
+                or not isinstance(result.get('source_path'), str) or not Path(result['source_path']).is_absolute()
+                or result.get('source_type') not in ('WAVE', 'WAV')
+                or not _number(result.get('position_sec')) or result['position_sec'] < 0
+                or not _number(result.get('length_sec')) or result['length_sec'] <= 0
+                or type(result.get('channels')) is not int or result['channels'] not in (1, 2)
+                or type(result.get('sample_rate')) is not int or result['sample_rate'] < 8000
+                or type(result.get('state_change_count')) is not int):
+            raise ReaperAdapterError('invalid observed stem item')
+        return dict(result)
+
+    def read_stem(self, session: Session, guid: str, item_guid: str) -> Mapping[str, Any]:
+        if not isinstance(item_guid, str) or not item_guid:
+            raise ValueError('item GUID required')
+        result = self._send('studio.read_stem', self._params(session, guid, item_guid=item_guid))
+        return self._stem_observed(result, guid, item_guid)
+
+    def replace_stem(self, session: Session, guid: str, baseline: Mapping[str, Any], stem: Path) -> Mapping[str, Any]:
+        """Replace a single audio item's source; a timeout needs fresh observation."""
+        if not isinstance(baseline, Mapping):
+            raise ValueError('observed item required')
+        item_guid = baseline.get('item_guid')
+        if not isinstance(item_guid, str) or not item_guid:
+            raise ValueError('observed item GUID required')
+        expected = self._stem_observed(baseline, guid, item_guid)
+        destination = self._stage_stem(session, stem)
+        if str(destination) == expected['source_path']:
+            raise ValueError('replacement must differ from current source')
+        result = self._send('studio.replace_stem', self._params(session, guid,
+            item_guid=item_guid, expected=expected, stem_path=str(destination)))
+        observed = self._stem_observed(result.get('observed'), guid, item_guid)
+        if (observed['take_guid'] != expected['take_guid']
+                or observed['source_path'] != str(destination)
+                or observed['source_type'] != expected['source_type']
+                or observed['position_sec'] != expected['position_sec']
+                or observed['length_sec'] != expected['length_sec']
+                or observed['channels'] != expected['channels']
+                or observed['sample_rate'] != expected['sample_rate']
+                or result.get('old_source_path') != expected['source_path']):
+            raise ReaperAdapterError('stem replacement readback differs; do not retry blindly')
+        return {**result, 'observed': observed}
+
+    def _stage_stem(self, session: Session, stem: Path) -> Path:
         project = self._writable(session)
         source = stem.resolve(strict=True)
         if not source.is_file() or source.suffix.lower() != '.wav':
@@ -308,7 +376,4 @@ class ReaperStudioAdapter:
                 os.link(temporary, destination)
             finally:
                 temporary.unlink(missing_ok=True)
-        result = self._send('studio.import_stem', {**params, 'stem_path': str(destination), 'position_sec': position_sec})
-        if result.get('durable_path') != str(destination) or result.get('track_guid') != guid or not isinstance(result.get('item_guid'), str) or not result['item_guid'] or not _number(result.get('length_sec')) or result['length_sec'] <= 0 or result.get('position_sec') != position_sec:
-            raise ReaperAdapterError('incomplete media readback; do not retry blindly')
-        return result
+        return destination

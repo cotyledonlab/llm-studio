@@ -1,4 +1,353 @@
-# Current handoff — issue #10 acceptance complete, Gate A next
+# Current handoff — issue #11 draft, live checks pending
+
+## 2026-09-23 REAPER instance cleanup
+
+John asked that new REAPER instances be cleaned up as work proceeds because
+three open instances were hard to distinguish. Native inventory found the
+older `a3-probe` profile with John's Bass handoff tab and other dirty tabs,
+plus two agent-owned disposable profiles: `issue11-owner-4yhg_yj8` and
+`issue11-rerun-0hhcwsdj`. All transports were stopped. The older handoff
+instance was left open and untouched.
+
+The one dirty owner-profile tab and four dirty rerun-profile tabs were saved
+to unique RPP snapshots under
+`/private/tmp/llm-studio-reaper/session-cleanup-p9_3l6xq/`. The manifest maps
+each snapshot to its source tab. Every original project file retained its
+pre-snapshot SHA256, and native readback showed the tab paths unchanged. Both
+disposable bridges returned successful `bridge.shutdown` replies. Exact
+profile/PID checks preceded SIGTERM of only those two processes; subsequent
+process inventory found only the older `a3-probe` REAPER instance (PID 23290).
+Do not assume that PID persists across restarts. Future work should create one
+identifiable disposable instance at a time and close it after preserving its
+scratch state. Ask John before closing the older/shared instance.
+
+## 2026-09-23 A05/A06/A15 continuation
+
+The A05 retained baseline, patched, and reopened native envelope chunks were
+compared again. The 0/4-second outside points and 1/3-second boundary points
+are exact, the interior differs, and the patched/reopened chunks match. Prior
+paired exports have zero delta outside 1–3 seconds. The Gate A matrix now marks
+A05 passed for the supported bounded linear patch, with curved subdivision and
+automation items outside the adapter contract. Evidence summary:
+`/private/tmp/llm-studio-reaper/issue11-a06-a15-hcrpm8ko/a05-boundary-evidence.json`.
+
+A first focused A06 run on `session-mode.RPP` observed all six distinct native
+automation modes through the installed adapter with one unchanged Keys lane and
+global override. Its mode-1 patch **applied natively** but the Python adapter
+raised `patch readback differs` after receipt: the requested non-grid midpoint
+was serialized with tiny floating-point differences, and the adapter compared
+times exactly. Native readback reconciled the applied point at about 1.667
+seconds and confirmed the runner restored the original mode. The project is
+dirty and unsaved in its own tab; do not retry that write or save the tab.
+Partial evidence:
+`/private/tmp/llm-studio-reaper/issue11-a06-a15-hcrpm8ko/a06-mode-evidence.json`.
+The adapter now allows only REAPER's eight-decimal precision budget while
+retaining exact silence parity and rejecting material time/gain drift. Focused
+tests passed 14/14; full suite passed 121 with 8 skips. Fix `ad69cd3` was
+committed and pushed. A fresh, byte-identical `session-mode-retry.RPP` copy then
+passed all six native/adapter mode readbacks through the installed bridge. The
+Keys lane and global override stayed unchanged across the observation loop;
+the mode-1 bounded patch passed with native/adapter mode 1 before and after,
+and the original mode 0 was restored. Evidence:
+`/private/tmp/llm-studio-reaper/issue11-a06-a15-hcrpm8ko/a06-mode-retry-evidence.json`.
+
+For A15, John's first manual pan drag on a named spare track was detected while
+still moving. Checked recovery succeeded and later independent native readback
+showed the Keys envelope exactly restored and the manual pan retained at 0.592.
+The first runner incorrectly required `CONFLICT` and failed before immediate
+post-recovery readback, so this is strong bounded evidence rather than a clean
+scripted pass. Its dirty `session-recovery.RPP` tab is preserved. A corrected
+runner accepts either a scoped restore preserving pan or a conflict preserving
+both edits, and waits for a settled pan plus a project revision. In a fresh
+`session-recovery-retry.RPP` tab, John's second move settled at pan 0.592,
+revision advanced from 3 to 5, and recovery returned `CONFLICT`. Immediate
+readback retained both pan and patched Keys envelope. The saved RPP and a clean
+four-track reopened copy retained pan 0.592 and Keys midpoint 0.25. Evidence:
+`/private/tmp/llm-studio-reaper/issue11-a06-a15-hcrpm8ko/session-recovery-retry.RPP.a15-human-recovery-1790143129.txt`
+and `reopen-recovery.txt` beside it. A05/A06/A15 now pass for their bounded
+disposable fixtures. A01 and the historical renderer timeout still prevent a
+full Gate A pass. Keep PR #37 draft and issue #11 open.
+
+## 2026-09-23 bridge lifecycle follow-up
+
+Sol reviewed the REAPER relaunch fault. The bridge patch now claims a fresh
+process-local owner on every invocation, checks ownership before each queue
+scan, and conditionally clears ownership on exit or explicit shutdown without
+clearing a successor. The exact patch applies with both the strict bootstrap
+installer and `git apply`; a mocked Lua host covers immediate rerun, old exit
+after takeover, shutdown/restart, and late exit. The pinned-controller suite
+passed 116 tests with 8 skips, including the Lua test. The fix was committed
+and pushed as `0395cba`.
+
+A separate licensed disposable profile at
+`/private/tmp/llm-studio-reaper/issue11-rerun-0hhcwsdj/` installed that exact
+patch; `bootstrap-verify` matched all four file hashes. REAPER launched without
+a project argument, so the blank startup tab stayed blank. Deferred callbacks
+ran without another audio-device or license dialog. A saved three-track manual
+copy was opened in a second tab. The first installed bridge launch returned
+three snapshots with one stable token. A second CLI invocation of the **same
+script path** stopped replies. A native probe found deferred callbacks still
+running, owner ExtState empty, and heartbeat aged by exit cleanup. A third
+invocation started a new stable owner immediately, without a 15-second wait.
+This is consistent with REAPER treating the second same-path action as a stop
+toggle; that UI/action behavior is inferred from state, not documented as a
+general rule. Do not prescribe blind double launches.
+
+While that owner was active, a byte-identical bridge script at a distinct
+filename claimed a new owner. Five snapshots shared one new token and the
+project remained stopped with three tracks. `bridge.shutdown` returned success;
+native readback found no owner, an aged ExtState heartbeat, working deferred
+callbacks, and an unchanged project. One launch of the installed script then
+restored a stable token across three snapshots. This qualifies owner takeover,
+explicit stop, and immediate restart in one process with one disposable
+resource. It does not coordinate separate REAPER processes sharing a resource.
+The on-disk heartbeat file can look fresh for up to 15 seconds after shutdown.
+
+Gate A is a **no-go for full acceptance** despite the A4 pass described below:
+A01 remains partial, and the old renderer timeout remains
+unexplained. Keep PR #37 draft and issue #11 open. Next work should address or
+explicitly narrow those remaining capability checks without repeating the
+accepted A4 replacement on an already changed tab.
+
+## 2026-09-23 after audio-device selection
+
+John selected an audio device in the new licensed instance at
+`/private/tmp/llm-studio-reaper/issue11-owner-4yhg_yj8/`; no license dialog
+appeared. The deferred probe gained `deferred=pass`, the installed bridge
+heartbeat appeared, and four snapshots shared one token. The startup tab then
+contained six in-memory tracks despite its three-track saved RPP. It was left
+clean and untouched. A new uniquely named saved-manual-copy tab
+`session-owner-qualified.RPP` opened with exactly three tracks; native tab
+enumeration confirmed one selected target path, stopped transport, and the old
+six-track tab unchanged.
+
+Re-running the same installed bridge ReaScript stopped its replies. Native
+ExtState inspection found its heartbeat stale. Sol reviewed this as consistent
+with REAPER terminating the old running script before the new invocation
+returns on the fresh-heartbeat startup guard. After the beat aged, one bridge
+launch restored a stable token. A Luna child is implementing Sol's lifecycle
+fix: every invocation claims a fresh owner token, and conditional `atexit`
+cleanup must not clear a successor's ownership. Do not launch the current
+bridge script a second time in a live instance just to test the guard.
+
+With one stable owner and a fresh native tab proof, the guarded installed A4
+helper made **one** Drums replacement in `session-owner-qualified.RPP` and
+returned `ok: true`. Independent file-drop readback used the same token and
+confirmed new media path, track/item/take binding and five-second geometry,
+silent Bass with pan/ReaEQ, and unchanged Keys envelope. Evidence:
+`/private/tmp/llm-studio-reaper/issue11-owner-4yhg_yj8/installed-a4-evidence.json`.
+A guarded native save changed that RPP's SHA256 to
+`90c44753ee58367f36f90418f968f9bebc9fa393b1876150745b886696a3cc44`
+and serialized the new Drums path, Bass `VOLPAN 0 -0.2`, and Keys point
+`PT 2 0.0419846`. The source tab still reported dirty after
+`Main_SaveProjectEx`; preserve it.
+
+A byte-identical saved RPP was opened in `session-owner-reopened.RPP`. Native
+readback proved a clean three-track reopened tab with all original track,
+item, and take GUIDs, exact Bass gain/pan/ReaEQ, the Keys lane, and the
+accepted Drums source. The older startup tab remained clean and the qualified
+source tab remained dirty. Evidence:
+`/private/tmp/llm-studio-reaper/issue11-owner-4yhg_yj8/reopen-proof.txt`.
+Headless mix and three-stem renders from the saved reopened RPP passed 220,500
+aligned frames at 44.1 kHz, silent Bass, audible Keys automation, strong 440 Hz
+Drums, and one-LSB maximum mix/stem error. Evidence:
+`/private/tmp/llm-studio-reaper/issue11-live-saved-export-6m79wokj/mix-evidence.json`
+and `/private/tmp/llm-studio-reaper/gate-a4-stems-nye0xhlr/audio-evidence.json`.
+These are test tones, not human listening judgement. The zero-extra-tail
+fixture and old renderer timeout limits remain. Gate A still has partial
+capabilities; keep PR #37 draft and issue #11 open. Next: finish Sol review and
+tests for the lifecycle patch, then requalify relaunch behavior on a separate
+disposable profile without touching the accepted replacement tabs.
+
+## 2026-09-23 latest continuation
+
+John confirmed he moved the Bass fader in the uniquely named original-profile
+handoff tab. Bridge readback found linear gain `1e-50` after `0.50118723362727`,
+with pan, ReaEQ, and Keys points unchanged. A guarded native save of only that
+tab wrote Bass `VOLPAN 0 -0.2` to
+`/private/tmp/llm-studio-reaper/gate-a4-bass-handoff-5duxo9g9/session-bass-handoff.RPP`,
+SHA256 `faf7cf49e91af503015f00086437804e50f78ef89dc18582e0e67b23ef91b6f6`.
+The original tab still reported dirty; all older original-profile tabs were
+preserved. The copy carries the earlier Keys point at two seconds `0.0419846`,
+not the later saved `a3-probe` point.
+
+John also licensed the isolated REAPER instance. Its bridge began responding.
+The credential was not read or stored in the repository. An isolated tab at
+`/private/tmp/llm-studio-reaper/issue11-installed-human-7y171ubg/session-human-bass.RPP`
+opened from the saved manual RPP with exactly three tracks. Native tab checks
+proved one selected target path, stopped transport, and unchanged older tabs.
+The guarded installed helper made **one** `studio.replace_stem` call, which
+returned the expected hash-addressed 440 Hz Drums source and preserved item/take
+GUIDs. Its immediate independent read failed on a changed session token.
+Subsequent read-only snapshots alternated between two startup nonces for the
+same path/revision; `ps` found one REAPER process on this profile. This is a
+duplicate bridge-handler ownership fault. Do not retry that replacement or
+trust file-drop reads/writes until single-owner behavior is restored.
+
+Native readback at
+`/private/tmp/llm-studio-reaper/issue11-installed-human-7y171ubg/native-reconcile.txt`
+found the new source in the unique dirty target tab, the expected track/item/take
+GUIDs and five-second geometry, Bass gain `0` and unchanged pan/ReaEQ, plus
+unchanged older isolated tabs. The saved isolated RPP still references the old
+Drums source. A native save script first stopped on an overstrict revision
+assertion; after adjusting that assertion, a forwarded script produced no
+report, possibly due to a REAPER script-error dialog. John was asked to inspect
+the isolated instance for a dialog. Do not claim save/reopen success yet.
+
+An explicitly labeled offline copy of the saved manual RPP with only the native
+observed Drums source path patched in rendered successfully. Evidence:
+`/private/tmp/llm-studio-reaper/issue11-manual-export-_5e43jyr/offline-export-evidence.json`
+and `/private/tmp/llm-studio-reaper/gate-a4-stems-39pu0q2d/audio-evidence.json`.
+It has 220,500 aligned frames, silent Bass, audible Keys automation, strong
+440 Hz Drums, and one-LSB maximum mix/stem error. This does not replace the
+live save/reopen acceptance. A Luna child implemented a synchronous bridge
+heartbeat reservation in the installed hook patch; Sol review and live
+requalification remain pending. The license profile helper and silent-Bass
+export checker were committed and pushed with the guarded replacement runner
+at `dd9fc15`, `3abbbc7`, and `bfdf5a5`. Keep PR #37 draft and issue #11 open.
+
+Next: review/commit the bridge owner guard, requalify on a fresh isolated
+instance or fully stopped profile without disturbing the dirty target tab,
+then complete a guarded native save/reopen if the isolated dialog is cleared.
+Never repeat the already accepted replacement on the dirty target. The
+historical render timeout still has no explanation.
+
+The bridge owner guard was Sol-reviewed, passed a mocked Lua callback test and
+the pinned-controller suite (116 passed, 8 skipped), and was committed as
+`2e29299`. A new disposable profile at
+`/private/tmp/llm-studio-reaper/issue11-owner-4yhg_yj8/` was created to test
+it without touching the dirty earlier instance. The reviewed bootstrap plan
+and receipt are in that directory; `bootstrap-verify` matched all four installed
+file hashes. `install_profile_license.py` copied the existing protected license
+file into the stopped new profile without displaying its contents. The new
+REAPER process opened a clean three-track copy of the saved manual RPP in its
+single tab. Native preflight passed on exact resource, project path, stopped
+transport, track count and clean state. Launching the installed bridge yielded
+no heartbeat/reply. A minimal deferred probe wrote `top=pass` but no deferred
+marker, matching the earlier startup-dialog behavior; this is not evidence of
+a bridge-guard failure. John was asked to dismiss any dialog in the new
+instance. When callbacks run, observe three stable session tokens before one
+new guarded replacement in that fresh project. Keep the old dirty target
+untouched.
+
+Updated: 2026-09-23. Branch: `codex/issue-11-gate-a`; PR head at review start
+was `b884cfb`. Export-bound fix `679cefa` and pinned file-drop test `53e9d87`
+were committed afterward. Guarded empty-profile bootstrap is `c775004`.
+Draft PR: [#37](https://github.com/cotyledonlab/llm-studio/pull/37).
+Issue [#11](https://github.com/cotyledonlab/llm-studio/issues/11) remains open;
+Gate A is not accepted. Parallel issue #15 work is at draft PR #35 and must not
+mutate live REAPER. PR #33 is merged and issue #10 closed.
+
+Read [Gate A qualification](docs/qualification/reaper-gate-a.md) and the
+[adapter contract](adapters/reaper/README.md) before continuing. This branch
+implements same-length WAV replacement for a GUID-bound single-take item. The
+corrected direct native run passed source replacement, stale-request
+rejection, and track/item/take GUID comparisons across save/reopen. Evidence:
+`/private/tmp/llm-studio-reaper/gate-a4-7rng30qk/native-evidence.txt`. Source
+shape guards now require one empty track with the Keys envelope; the run passed
+that precondition. Installed file-drop transport and manual Bass gain
+acceptance remain open. The 45-second renderer timeout from #9 did not
+reproduce in one bounded no-profile retry and remains unexplained. Keep PR #37
+draft until Gate A is decided.
+
+PR #37's local `origin/main...b884cfb` review found one actionable offline
+gap: the export checker could accept mix and stems truncated to the same length.
+The checker now compares all four WAV frame counts with the fixture's
+full-project item bound. Read-only recheck of the retained files found 220,500
+frames each at 44.1 kHz; this fixture has no extra tail. A new offline test
+round-trips `studio.replace_stem` through the pinned controller's Python
+file-drop client and a fake daemon. This does not qualify the live installed
+Lua handler. The Gate A report now has a capability matrix. The local suite
+passes 82 tests with 9 skips; the optional real-controller install test is
+inapplicable because the adjacent controller checkout has advanced beyond
+the pin. GitHub PR metadata/checks could not be fetched during this review.
+
+## 2026-09-23 continuation
+
+John reported no remaining REAPER dialogs. A read-only native probe found the
+running `a3-probe` profile stopped with four tabs, three dirty; two tabs shared
+the path `gate-a4-7rng30qk/session.RPP`. The original `a3-probe/session.RPP`
+was no longer open. Do not use the old manual-handoff or take-replacement
+runners: both assume that original tab, and path-only lookup cannot distinguish
+the duplicate A4 tabs. Do not close or save any of the prior dirty tabs.
+
+A new, byte-identical copy of the saved clean A4 RPP is at
+`/private/tmp/llm-studio-reaper/gate-a4-bass-handoff-5duxo9g9/session-bass-handoff.RPP`.
+Its offline inspection report is beside it. It has the earlier manually drawn
+Keys lane (two-second raw gain `0.0419846`), not the later saved
+`a3-probe/session.RPP` value `1.95447444`; do not claim it recovers a lost
+in-memory edit. The unique copy was opened as a fifth tab without closing or
+saving the four old tabs. Installed bridge readback in `before-manual.json`
+recorded Bass linear gain `0.50118723362727`, pan `-0.2`, ReaEQ and the Keys
+points. John was asked to move only this tab's Bass fader. No changed value or
+producer confirmation had arrived at this update.
+
+For separate installed-transport qualification, a pinned controller checkout,
+bootstrap plan, receipt and new profile are under
+`/private/tmp/llm-studio-reaper/issue11-installed-prep-20260923/`. The opt-in
+empty-profile bootstrap guard was reviewed by Sol and tested; the full suite
+passed 93 tests with 8 skips against that exact pinned checkout. An elevated
+live process probe identified PID 23290 using the distinct `a3-probe` cfgfile.
+The guarded apply installed four files only in the new empty resource;
+`bootstrap-verify` matched their hashes before REAPER startup.
+
+A second REAPER instance, PID 69313, uses only that new cfgfile and the copied
+project `/private/tmp/llm-studio-reaper/issue11-installed-run-60evlc5m/session.RPP`.
+One-shot scripts observed its exact resource, opened the copied project and
+loaded the installed bridge script, but no heartbeat or file-drop reply
+followed. Even a minimal `reaper.defer` probe wrote its top-level marker but
+not its deferred marker. The cause is unproven; a startup/modal dialog blocking
+the event loop is plausible. John was asked to check/dismiss any dialog in the
+second instance. After that, retry only the minimal defer probe once with a
+five-second bound. If it still does not run, stop bridge retries and record
+installed runtime acceptance as pending. Do not count the installed file hashes
+or offline fake-daemon test as live transport success.
+
+## Prior REAPER ownership and producer state (2026-09-22)
+
+Only this task may mutate the DAW. REAPER was using the disposable profile
+`/private/tmp/llm-studio-reaper/a3-probe/profile/reaper.ini` at last inspection.
+John had closed all but one tab. During continuation, the saved one-track
+`automation-timebase-dk2qtrq9/project-1.RPP` fixture was opened for the native
+run, along with disposable copies. A cleanup helper closed one clean test tab;
+subsequent scripts produced repeated dialogs, and the current tab state is
+unknown. John reported an error from `close_run_tab.lua`; stop REAPER work and
+re-observe after the dialogs are cleared. Previously the original
+`a3-probe/session.RPP` was dirty, and its **in-memory** two-second Keys
+envelope point differed from the last saved source RPP. The source RPP on disk
+was not changed by the test. Preserve any remaining producer state.
+
+John was asked to move the Bass fader in the selected three-track copy, but
+reported a dialog and that the project closed. A subsequent read-only native
+tab enumeration showed both tabs still open and the original active. No manual
+Bass edit has been observed or accepted; do not count the scripted -6 dB
+fixture gain. The dialog's cause remains unknown.
+
+The A4 copy and reports are under
+`/private/tmp/llm-studio-reaper/gate-a4-693qi2_4/`; the mix and part WAVs are
+under `gate-a4-export-rgwcznsd/` and `gate-a4-stems-yq1lv7j2/`. These are
+temporary and may expire. The first sandboxed REAPER launcher aborted during
+macOS application registration; it did not deliver the script and the old
+process survived. Elevated forwarding of the exact same wrapper succeeded.
+Opening the copy ended its running ReaScript; the second-stage readback script
+completed. Do not repeat either failure path unchanged.
+
+## Next bounded steps
+
+1. After John reports the Bass move, observe the unique handoff copy again and
+   prove a real gain change with unchanged session binding, pan, FX and Keys
+   lane. Preserve all earlier dirty tabs and do not use path-only tab lookup.
+2. After John checks the second instance for a dialog, repeat the minimal defer
+   probe once. If it passes, check the installed daemon's heartbeat and run a
+   fresh `studio.replace_stem` through the pinned file-drop client against the
+   separate disposable profile. Verify save/reopen, bindings and export. If
+   defer still fails, record the installed runtime gate as pending.
+3. Finish the Gate A report and go/no-go decision from observed evidence. Do
+   not close #11 or undraft PR #37 while these checks remain open.
+
+---
+
+# Prior handoff — issue #10 acceptance complete (historical)
 
 Updated: 2026-09-22. Implementation branch: `feat/reaper-automation-handoff`.
 PR: [#33](https://github.com/cotyledonlab/llm-studio/pull/33).

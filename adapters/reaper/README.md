@@ -7,9 +7,28 @@ and evidence below.
 
 The external controller is pinned in `controller-pin.json`. Its file-drop
 transport, OSC resources and renderer remain upstream. `controller-studio-hook.patch`
-is an exact patch against that commit: it loads `studio_handler.lua` into the
-existing daemon, routes bounded `studio.*` operations and observes session
-changes during daemon ticks. No generic bridge code is copied into this repo.
+is an exact patch against that commit. It loads `studio_handler.lua` into that
+daemon, routes bounded `studio.*` operations and observes session changes during
+daemon ticks. Every invocation claims a fresh process-local owner generation
+and queues its deferred loop, including an immediate rerun while the prior
+heartbeat is fresh. Old callbacks check ownership before scanning. Conditional,
+idempotent exit cleanup clears the owner and marks the ExtState heartbeat stale
+only while that callback still owns it. Explicit shutdown uses the same cleanup,
+so a restart can claim immediately. Cleanup does not touch the on-disk heartbeat
+file; status based on that file's modification time can still report alive for
+up to 15 seconds. The generation coordinates invocations within one REAPER
+process sharing one resource directory; it does not coordinate separate REAPER
+processes that share the directory.
+No generic bridge code is copied into this repo.
+
+To restart a running bridge, send `bridge.shutdown`, verify ownership is
+released, then launch `Scripts/agent_bridge.lua` once. In a REAPER 7.80
+disposable profile, forwarding that same script path while it was already
+running stopped the service; the next launch started a new owner immediately.
+Inspect the bridge after each action instead of assuming a launch always starts
+a second instance. A byte-identical script at a different filename did claim
+ownership while the first script was running, and repeated snapshots kept one
+stable new session token.
 
 The controller's declared MIT licence has no accompanying copyright notice at
 this pin. Resolve that and this repository's outgoing licence before distribution.
@@ -26,12 +45,23 @@ PYTHONPATH=src python3 -m llm_studio bootstrap-plan \
   --controller /absolute/reaper-controller \
   --output /absolute/reviewed-plan.json
 
-# Review the reported files/hashes. Stop REAPER before applying.
+# Review the reported files/hashes. The default apply refuses while any
+# REAPER process is running.
 PYTHONPATH=src python3 -m llm_studio bootstrap-apply \
   /absolute/reviewed-plan.json --receipt /absolute/setup-receipt.json
 PYTHONPATH=src python3 -m llm_studio bootstrap-verify /absolute/setup-receipt.json
 PYTHONPATH=src python3 -m llm_studio bootstrap-rollback /absolute/setup-receipt.json
 ```
+
+For a newly created **empty** disposable resource under
+`/private/tmp/llm-studio-reaper/`, apply may use
+`--isolated-empty-profile`. This opt-in still refuses symlinked paths, any
+pre-existing resource contents or planned target files, and any uncertain
+process probe. It runs fresh `pgrep` and `ps` checks and proceeds only when no
+REAPER argv names that resource's exact `reaper.ini`; the default global stop
+guard remains in effect for every other apply. This exception is limited to
+initial file installation in the new profile. Rollback always requires all
+REAPER processes stopped and never uses the isolated-profile exception.
 
 Plans capture exact file bytes and prior hashes. Apply checks the controller
 pin, rejects stale targets and unsafe process detection, and backs up touched
@@ -70,12 +100,21 @@ package. The studio adapter has these operations:
 | `read_volume_envelope(session, guid, start_sec=..., end_sec=...)` | `studio.read_volume_envelope` | Stable envelope GUID, timebase, points and expiring fingerprint |
 | `patch_volume_envelope(session, guid, baseline, points)` | `studio.patch_volume_envelope` | Bounded native patch, exact readback and recovery receipt |
 | `undo_volume_patch(session, guid, patch)` | `studio.undo_volume_patch` | Checked envelope-only compensating recovery or refusal |
+| `read_stem(session, guid, item_guid)` | `studio.read_stem` | Item/take GUID, source, duration, format and project revision |
+| `replace_stem(session, guid, baseline, wav)` | `studio.replace_stem` | Checked same-length/source-format WAV replacement and observed binding |
 
 `silent=True` is explicit zero gain; `gain_db=None` leaves gain unchanged.
 Only WAV import is qualified. Python stages a content-addressed session asset;
 REAPER attaches it and reads back the actual item. A failed/timeout reply must
 not be blindly retried because native item insertion may already have happened.
 Retry/reconciliation policy belongs to subsequent durability work.
+
+The A4 replacement operation targets one existing single-take WAV item by
+GUID, keeps its position/length and source format, and fails closed on a stale
+item/project observation. It does not replace arbitrary MIDI takes, time-stretch
+settings or multi-take comp lanes. [Gate A evidence](../../docs/qualification/reaper-gate-a.md)
+records the bounded native and installed-transport checks, including the manual
+Bass move, on disposable copies. Full Gate A acceptance remains open.
 
 Session identity is the saved path, not an invented REAPER project GUID.
 The token combines a handler-load nonce with observed project pointer/path
