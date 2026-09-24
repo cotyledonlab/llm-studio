@@ -344,7 +344,7 @@ class ReaperStudioAdapter:
                 or observed['source_path'] != str(destination)
                 or observed['source_type'] != expected['source_type']
                 or not self._serialized_time_matches(observed['position_sec'], expected['position_sec'])
-                or observed['length_sec'] != expected['length_sec']
+                or not self._serialized_time_matches(observed['length_sec'], expected['length_sec'])
                 or observed['channels'] != expected['channels']
                 or observed['sample_rate'] != expected['sample_rate']
                 or result.get('old_source_path') != expected['source_path']):
