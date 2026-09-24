@@ -280,7 +280,7 @@ by itself establish the complete producer workflow.
 
 | SPEC ID | Capability | Status and evidence |
 |---|---|---|
-| A01 | Core tracer through APIs/protocols without GUI automation | **Partial.** A3 automation and A4 replacement/export used native APIs, ReaScript, file-drop transport, or CLI on disposable copies. This slice has not completed the full core tracer while another application has keyboard focus. |
+| A01 | Complete Gate A DAW workflow through APIs/protocols without GUI automation | **Partial.** John clarified on 2026-09-24 that A01 covers the complete Gate A DAW workflow while another application has keyboard focus; the eight-bar musical tracer remains Gate C. Existing A3/A4 work used native APIs, ReaScript, file-drop transport, or CLI on disposable copies, but the full Gate A workflow has not been demonstrated as one no-GUI run with focus observed. |
 | A02 | Manual Bass gain survives generation and accepted drum replacement | **Passed for the disposable A4 copy.** John's fader move was observed and saved. The installed replacement preserved exact silent Bass gain, pan, and ReaEQ through independent readback, native save, and reopen. The broader producer workflow is unqualified. |
 | A03 | Manual Keys envelope survives unrelated edits, restart and export | **Prior A3 evidence plus disposable A4 pass.** The issue #10 qualification records John's manual Keys points, byte-identical copy, unrelated edits, save/reopen, and audible export. A4 preserved the earlier copied Keys lane through installed Drums replacement, save/reopen, and aligned export. The later `a3-probe` point was not recovered. |
 | A04 | Overlapping edit blocks stale proposal without overwriting points | **Prior A3 evidence.** The corrected producer-edit run returned `CONFLICT` and preserved John's edited envelope chunk exactly. Earlier programmatic conflict checks also passed. |
@@ -342,15 +342,12 @@ the producer.
 
 ## Remaining acceptance
 
-1. Resolve A01's scope before using Gate A as a prerequisite for Gate C. A01
-   literally requires a complete core tracer while another application has
-   keyboard focus, while the implementation plan places the musical tracer in
-   Gate C, creating a circular dependency in the current gate ordering. The
-   existing repository has no musical-tracer implementation or qualification
-   report; API-only A3/A4 checks support the architecture but do not complete
-   that tracer. Keep A01 partial until the producer decides the gate boundary
-   or the Gate C tracer is implemented and demonstrated through APIs/protocols
-   while another application has keyboard focus.
+1. Demonstrate the complete Gate A DAW workflow through APIs/protocols while
+   another application has keyboard focus. John clarified on 2026-09-24 that
+   the eight-bar musical tracer remains Gate C. Existing API-only A3/A4 runs
+   provide bounded evidence for several steps, but no run has covered the
+   complete Gate A workflow with focus observed. Keep A01 partial until that
+   demonstration is recorded.
 2. Complete or explicitly narrow the remaining partial capabilities in the
    matrix. Never repeat the accepted replacement on an already changed tab.
 3. Do not replace a script in the running producer profile.
