@@ -1,9 +1,8 @@
 # Render job qualification (issue #15)
 
 Date: 2026-09-24. Host: Apple Silicon Mac, macOS 26.5.2. Status: **native
-worker isolation and publication pass; offline A07 reference calibration
-passed for the pinned SuperCollider NRT path; REAPER import readback and full
-Gate B acceptance remain open**.
+worker isolation and publication pass; A07 reference calibration and one
+disposable REAPER import readback pass; full Gate B acceptance remains open**.
 
 The runner at `tools/qualification/render_job_native.py` ran the pinned,
 producer-approved catalogue instruments inside `RenderService` worker processes.
@@ -95,11 +94,38 @@ float sample hashes are `16950ba49f90650a19a6bb8d064ced00dec1c6c852e5bfcbe3b141f
 at 44.1 kHz and `313d90907bcb676ce68c1881b18bcc87a053396eace6e837260cc640c4829707`
 at 48 kHz.
 
-This qualifies SuperCollider's reference scheduling path and the offline
-alignment calculation for this fixture only. It does not measure Dexed's
-patch-specific latency or establish that REAPER imported media at the same
-sample frame. A07 remains pending until the disposable REAPER import readback
-confirms the calibrated reference events without additional compensation.
+### Disposable REAPER import readback
+
+One 44.1 kHz reference clip was converted to 48 kHz, preserving its decoded
+samples. The resulting mono IEEE-float WAV is 139 frames with SHA-256
+`ac63f08616e75c298328f6b745b3903bc1f337a0776ddec7cba2aa157f19ddf4`. Direct
+WAV decoding found its absolute peak at local sample 70. The imported item is
+at 0.24854166666667 seconds (frame 11930 at 48 kHz), so the peak lands at
+timeline frame 12000 exactly. The item has no take offset or rate adjustment;
+the native handler's `studio.read_stem` returned WAVE, mono, 48000 Hz, length
+0.0028958333333333 seconds, track GUID
+`{FDDBF646-3F7C-4E1A-B048-B6FC18BC072E}`, item GUID
+`{2501281A-BA65-214C-B4D2-58E0EE7EA4DB}`, take GUID
+`{F3B6A553-915B-9841-899D-FD6391E1684B}`, and project state change count 4.
+
+The first `import_stem` call reported “incomplete media readback; do not retry
+blindly” because its adapter required exact equality between the requested
+Python float (0.24854166666666666) and REAPER's serialized/native readback
+(0.24854166666667). The item was already present. A read-only native
+`studio.read_stem` by the RPP `IGUID` reconciled it; the RPP `GUID` is the take
+GUID. No second import was sent. The post-import project snapshot is
+`/private/tmp/llm-studio-reaper/a07-reference-20260924-codex/evidence/session-after-import.RPP`
+(SHA-256 `36bbf0f227efa849f86bc679f86ce6bde8fc182ebc14896e290b5037528e73d7`).
+The original disposable project file hash remained unchanged. The adapter now
+accepts only the existing 5.1 ns RPP time serialization budget for import and
+replacement readback; focused tests accept the rounded value and reject a
+1-microsecond placement mismatch.
+
+This qualifies SuperCollider's reference scheduling path, the offline
+alignment calculation, and one imported reference clip for this fixture only.
+It does not measure Dexed's patch-specific latency or establish renderer
+latency for arbitrary musical events. The 64-sample offset is the measured
+within-clip impulse location, not fixed latency compensation.
 
 To repeat native worker evidence, run from the repository root with a new
 result directory each time:
