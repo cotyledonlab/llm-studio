@@ -213,9 +213,14 @@ def prepare_profiles(root: Path, controller: Path, license_source: Path) -> dict
         verified = bootstrap.verify(result)
         if not verified['ok']:
             raise RuntimeError('isolated bootstrap hashes or directories failed readback')
+        scripts = resource / 'Scripts'
+        scripts.mkdir(exist_ok=True)
+        helper = scripts / 'llm_studio_a01_reopen.lua'
+        shutil.copyfile(Path(__file__).with_name('reaper_a01_reopen.lua'), helper)
         return {'receipt': str(result.backup_dir) if result.backup_dir else None,
                 'changed': list(result.changed), 'unchanged': list(result.unchanged),
-                'verify': verified}
+                'verify': verified, 'reopen_helper': str(helper),
+                'reopen_config': str(scripts / 'llm_studio_a01_reopen_config.lua')}
 
     main_result = gate.step('isolated profile bootstrap', create_main_profile)
     license_target = gate.step('copy protected license to isolated profile',
@@ -288,9 +293,13 @@ class FocusGate:
 
     def manual_handoff(self, instruction: str) -> dict[str, Any]:
         before = self.probe.read()
+        if before['bundle_id'] == REAPER_BUNDLE_ID or before['bundle_id'] in NON_USER_FRONTMOST_BUNDLE_IDS:
+            self._append({'event': 'manual-handoff-refused', 'at_utc': utc_now(),
+                          'instruction': instruction, 'focus_before': before})
+            raise RuntimeError('manual handoff must begin with an eligible user application frontmost')
         self._append({'event': 'manual-handoff-begins', 'at_utc': utc_now(),
                       'instruction': instruction, 'focus_before': before})
-        input(instruction + '\nAfter editing, switch to another app and press Return here. ')
+        input(instruction + '\nAfter the instructed REAPER step, switch to another app and press Return here. ')
         after = self.probe.read()
         record = {'event': 'manual-handoff-ends', 'at_utc': utc_now(),
                   'focus_after': after, 'reaper_frontmost_after':
@@ -414,6 +423,120 @@ def _session_identity(session: Any) -> dict[str, Any]:
             'tracks': [plain(track) for track in session.tracks]}
 
 
+def _guard_duplicate_run(root: Path) -> None:
+    paths = (root / 'a01-focus.jsonl', root / 'a01-evidence.json',
+             root / 'a01-failure.json', root / 'a01-tabs-before.tsv',
+             root / 'a01-tabs-after.tsv', root / 'a01-reopen-copy.RPP',
+             root / 'a01-open-stage.txt', root / 'a01-action-id.txt')
+    present = [str(path) for path in paths if os.path.lexists(path)]
+    if present:
+        raise FileExistsError('A01 evidence or reopen-copy path already exists: ' + ', '.join(present))
+
+
+def _failure_record(root: Path, error: BaseException) -> dict[str, Any]:
+    manifest_path = root / 'a01-manifest-profile.json'
+    manifest = json.loads(manifest_path.read_text(encoding='utf-8')) if manifest_path.is_file() else {}
+    journal = root / 'a01-focus.jsonl'
+    project = Path(manifest['project']) if manifest.get('project') else None
+    reopen_copy = root / 'a01-reopen-copy.RPP'
+    inventories = {name: root / name for name in ('a01-tabs-before.tsv', 'a01-tabs-after.tsv')}
+    return {
+        'schema': 'llm-studio.reaper-gate-a01-failure.v1', 'at_utc': utc_now(),
+        'root': str(root), 'ok': False,
+        'error': f'{type(error).__name__}: {error}',
+        'traceback': traceback.format_exc(),
+        'focus_journal': str(journal) if journal.is_file() else None,
+        'focus_journal_sha256': sha256(journal) if journal.is_file() else None,
+        'project': str(project) if project else None,
+        'project_sha256_at_failure': sha256(project) if project and project.is_file() else None,
+        'reopen_copy': str(reopen_copy) if reopen_copy.is_file() else None,
+        'reopen_copy_sha256_at_failure': sha256(reopen_copy) if reopen_copy.is_file() else None,
+        'tab_inventories': {name: {'path': str(path), 'sha256': sha256(path)}
+                            for name, path in inventories.items() if path.is_file()},
+        'action_id_readback': ({'path': str(root / 'a01-action-id.txt'),
+                                'sha256': sha256(root / 'a01-action-id.txt')}
+                               if (root / 'a01-action-id.txt').is_file() else None),
+        'open_stage_marker': ((root / 'a01-open-stage.txt').read_text(encoding='utf-8')
+                              if (root / 'a01-open-stage.txt').is_file() else None),
+        'effects_and_receipts': 'See durable a01-focus.jsonl started/finished and qualification-checkpoint events.',
+    }
+
+
+def _registered_reopen_action_id(resource: Path) -> str:
+    helper_name = 'llm_studio_a01_reopen.lua'
+    action_table = resource / 'reaper-kb.ini'
+    if not action_table.is_file() or action_table.is_symlink():
+        raise RuntimeError('A01 reopen action is not registered in this profile reaper-kb.ini')
+    pattern = re.compile(r'^SCR\s+4\s+0\s+(RS[0-9a-f]{40})\s+"Custom: '
+                         + re.escape(helper_name) + r'"\s+' + re.escape(helper_name) + r'$')
+    matches = [match.group(1) for line in action_table.read_text(encoding='utf-8').splitlines()
+               if (match := pattern.match(line))]
+    if len(matches) != 1:
+        raise RuntimeError(f'expected exactly one valid A01 reopen action registration, found {len(matches)}')
+    return matches[0]
+
+
+def _read_action_command_id(path: Path, registered_action_id: str) -> int:
+    if not path.is_file() or path.is_symlink():
+        raise RuntimeError('native A01 action-ID readback is missing')
+    values = dict(line.split('=', 1) for line in path.read_text(encoding='utf-8').splitlines()
+                  if '=' in line)
+    if values.get('ok') != 'true' or values.get('registered_action_id') != registered_action_id:
+        raise RuntimeError('native A01 action-ID readback does not match the registered ReaScript')
+    raw = values.get('reaper_command_id', '')
+    if not raw.isdecimal() or int(raw) <= 0:
+        raise RuntimeError('native A01 action-ID readback is not a positive integer command ID')
+    return int(raw)
+
+
+def _write_reopen_config(resource: Path, *, phase: str, source: Path, reopened: Path,
+                         inventory: Path, marker: Path,
+                         registered_action_id: str) -> Path:
+    config_path = resource / 'Scripts' / 'llm_studio_a01_reopen_config.lua'
+    if not config_path.parent.is_dir() or config_path.parent.is_symlink():
+        raise RuntimeError('A01 action script directory is missing or unsafe')
+    if config_path.is_symlink():
+        raise RuntimeError('A01 action config must not be a symlink')
+    config = {'phase': phase, 'source_path': str(source), 'reopened_path': str(reopened),
+              'inventory_path': str(inventory), 'marker_path': str(marker),
+              'registered_action_id': registered_action_id}
+    config_path.write_text('return ' + lua_table(config) + '\n', encoding='utf-8')
+    return config_path
+
+
+def _dispatch_reopen_action(controller: Path, command_id: int) -> dict[str, Any]:
+    result = subprocess.run(
+        [sys.executable, '-m', 'reaper_connector', 'osc-send', '/action', str(command_id)],
+        env={**os.environ,
+             'PYTHONPATH': str(controller / 'src') + os.pathsep + os.environ.get('PYTHONPATH', '')},
+        capture_output=True, text=True, timeout=10, check=False)
+    try:
+        sent = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        sent = None
+    receipt = {'command_id': command_id, 'returncode': result.returncode,
+               'send_receipt': sent, 'stderr': result.stderr[-1000:]}
+    if result.returncode:
+        raise RuntimeError(f'OSC action dispatch failed: {receipt}')
+    if not isinstance(sent, dict) or sent.get('address') != '/action' or sent.get('args') != [command_id]:
+        raise RuntimeError(f'OSC CLI did not return the expected action dispatch receipt: {receipt}')
+    return receipt
+
+
+def lua_table(values: dict[str, Any]) -> str:
+    return '{' + ', '.join(f'[{json.dumps(key)}]={json.dumps(value)}'
+                           for key, value in values.items()) + '}'
+
+
+def _read_inventory(path: Path) -> list[str]:
+    if not path.is_file():
+        raise RuntimeError(f'native reopen inventory is missing: {path}')
+    lines = path.read_text(encoding='utf-8').splitlines()
+    if not lines or lines[0] != 'ok=true':
+        raise RuntimeError(f'native reopen stage failed: {lines[:5]}')
+    return lines[1:]
+
+
 def run_qualification(args: argparse.Namespace) -> dict[str, Any]:
     from llm_studio import bootstrap
     from llm_studio.reaper import ProposalConflict, ReaperStudioAdapter
@@ -422,6 +545,7 @@ def run_qualification(args: argparse.Namespace) -> dict[str, Any]:
     root = raw_root.resolve(strict=True)
     if raw_root != root or raw_root.is_symlink() or not root.is_relative_to(BASE):
         raise ValueError('run root must be a canonical disposable directory')
+    _guard_duplicate_run(root)
     manifest_path = root / 'a01-manifest-profile.json'
     if not manifest_path.is_file():
         raise ValueError('run profile preparation is incomplete')
@@ -436,6 +560,7 @@ def run_qualification(args: argparse.Namespace) -> dict[str, Any]:
         raise ValueError('resource must be the isolated profile resource directory')
     if not (resource / 'Scripts/agent_bridge.lua').is_file() or not (resource / 'Scripts/llm_studio_reaper.lua').is_file():
         raise ValueError('installed bridge and studio handler are required')
+    reopen_action_id = _registered_reopen_action_id(resource)
     if args.controller.resolve(strict=True) != args.controller or args.controller != PINNED_CONTROLLER:
         raise ValueError(f'controller path must be the canonical pinned checkout {PINNED_CONTROLLER}')
     from llm_studio.bootstrap import validate_controller_checkout, plan_bootstrap, dry_run
@@ -450,8 +575,6 @@ def run_qualification(args: argparse.Namespace) -> dict[str, Any]:
         raise ValueError('manifest does not belong to the requested run root')
     journal = root / 'a01-focus.jsonl'
     report = root / 'a01-evidence.json'
-    if os.path.lexists(journal) or os.path.lexists(report):
-        raise FileExistsError('A01 evidence already exists; refusing to rerun this disposable session')
     probe = FocusProbe(root)
     probe.build()
     gate = FocusGate(probe, journal)
@@ -462,6 +585,7 @@ def run_qualification(args: argparse.Namespace) -> dict[str, Any]:
         'controller_commit': commit, 'bootstrap_plan': dry_run(plan),
         'source_project_sha256': manifest['source_project_sha256'],
         'prepared_project_sha256': manifest['project_sha256'],
+        'reopen_action_id': reopen_action_id,
         'manual_handoff_required': True, 'steps': {},
     }
 
@@ -515,6 +639,24 @@ def run_qualification(args: argparse.Namespace) -> dict[str, Any]:
     drum_layout = next(item for item in layout if item['name'] == 'Drums')
     drums_before = dict(adapter.read_stem(session, drums.guid, drum_layout['item_guid']))
     record('baseline', {'bass': bass_before, 'keys_envelope': keys_before, 'drums': drums_before})
+
+    action_id_marker = root / 'a01-action-id.txt'
+    action_config = _write_reopen_config(
+        resource, phase='identify', source=project, reopened=project,
+        inventory=root / 'a01-tabs-before.tsv', marker=action_id_marker,
+        registered_action_id=reopen_action_id)
+    action_id_handoff = gate.manual_handoff(
+        f'In REAPER, run the registered helper {reopen_action_id} once for exact native action-ID readback. '
+        f'This identify phase only records the action command ID. Switch to another app and press Return here. '
+        f'Config: {action_config}')
+    deadline = time.monotonic() + 10
+    while not action_id_marker.is_file() and time.monotonic() < deadline:
+        time.sleep(0.1)
+    reopen_command_id = _read_action_command_id(action_id_marker, reopen_action_id)
+    record('reopen_action_registration', {'registered_action_id': reopen_action_id,
+                                          'native_command_id': reopen_command_id,
+                                          'manual_setup_handoff': action_id_handoff,
+                                          'readback': action_id_marker.read_text(encoding='utf-8')})
 
     # Prove reversible gain/pan access before the producer handoff.
     test_mix = adapter.set_mixer(session, bass.guid, gain_db=0.0, pan=0.25)
@@ -642,56 +784,111 @@ def run_qualification(args: argparse.Namespace) -> dict[str, Any]:
         resource_path=resource))
     if saved.get('ok') is not True or not project.is_file():
         raise RuntimeError('final project save did not complete')
+    reopen_source_session = adapter.observe_session()
+    reopen_source_bindings = {}
+    for track_name, track_guid in (('Keys', keys.guid), ('Bass', bass.guid), ('Drums', drums.guid)):
+        item_guid = next(item['item_guid'] for item in layout if item['name'] == track_name)
+        reopen_source_bindings[track_name] = dict(adapter.read_stem(
+            reopen_source_session, track_guid, item_guid))
+    record('bindings_before_fresh_tab', {'session': _session_identity(reopen_source_session),
+                                         'items': reopen_source_bindings})
     before_reopen_hash = sha256(project)
-    reopen_script = root / 'a01-close-reopen.lua'
-    reopen_marker = root / 'a01-close-reopen.txt'
-    if reopen_marker.exists() or reopen_script.exists():
-        raise FileExistsError('native reopen evidence path already exists')
-    reopen_script.write_text(
-        'local expected = ' + json.dumps(str(project)) + '\n'
-        + 'local marker = ' + json.dumps(str(reopen_marker)) + '\n'
-        + 'local function write(s) local f=assert(io.open(marker,"a")); f:write(s,"\\n"); f:close() end\n'
-        + 'local _, path = reaper.EnumProjects(-1, "")\n'
-        + 'if path ~= expected then write("refused_wrong_project=" .. tostring(path)); return end\n'
-        + 'if reaper.IsProjectDirty(0) or reaper.GetPlayState() ~= 0 then write("refused_dirty_or_playing"); return end\n'
-        + 'local count, i = 0, 0; while reaper.EnumProjects(i, "") do count=count+1; i=i+1 end\n'
-        + 'if count ~= 1 then write("refused_project_tab_count=" .. count); return end\n'
-        + 'write("close_begin=" .. path)\n'
-        + 'reaper.Main_OnCommand(40859, 0)\n'
-        + 'reaper.Main_openProject(expected)\n'
-        + 'local _, reopened = reaper.EnumProjects(-1, "")\n'
-        + 'write("reopened=" .. tostring(reopened == expected))\n', encoding='utf-8')
-    reopen = gate.step('close and freshly reopen disposable RPP', lambda: subprocess.run(
-        [str(REAPER), '-cfgfile', str(resource / 'reaper.ini'), '-nonewinst', '-noactivate',
-         str(reopen_script)], capture_output=True, text=True, timeout=25, check=True))
-    if not reopen_marker.is_file() or 'reopened=true' not in reopen_marker.read_text():
-        raise RuntimeError(f'native close/reopen marker missing or failed: {reopen_marker}')
-    process_after = gate.step('isolated profile process identity after reopen',
+    reopened_project = root / 'a01-reopen-copy.RPP'
+    gate.step('create byte-identical reopen copy', lambda: shutil.copyfile(project, reopened_project))
+    if sha256(reopened_project) != before_reopen_hash:
+        raise RuntimeError('reopen copy is not byte-identical to the saved source project')
+    inventory = root / 'a01-tabs-before.tsv'
+    open_marker = root / 'a01-open-stage.txt'
+    config_path = _write_reopen_config(resource, phase='open', source=project,
+                                       reopened=reopened_project, inventory=inventory,
+                                       marker=open_marker,
+                                       registered_action_id=reopen_action_id)
+    open_dispatch = gate.step('OSC dispatch of A01 open-tab ReaScript action',
+                              lambda: _dispatch_reopen_action(args.controller, reopen_command_id))
+    deadline = time.monotonic() + 25
+    while not open_marker.is_file() and time.monotonic() < deadline:
+        time.sleep(0.1)
+    if not open_marker.is_file():
+        raise TimeoutError('native open-tab action did not write its pre-open marker')
+    if not open_marker.is_file() or 'open_call=issued' not in open_marker.read_text():
+        raise RuntimeError(f'native open stage did not issue Main_openProject: {open_marker}')
+
+    deadline = time.monotonic() + 25
+    session = None
+    open_observation_error = None
+    while time.monotonic() < deadline:
+        try:
+            observed = adapter.observe_session()
+            if observed.path == reopened_project:
+                session = observed
+                break
+            open_observation_error = f'active path remains {observed.path}'
+        except Exception as error:
+            open_observation_error = f'{type(error).__name__}: {error}'
+        time.sleep(0.1)
+    if session is None:
+        raise TimeoutError(f'bridge did not observe the new tab before deadline: {open_observation_error}')
+    if session.id == reopen_source_session.id:
+        raise RuntimeError('new tab did not create a fresh session identity')
+
+    after_inventory = root / 'a01-tabs-after.tsv'
+    verify_config_path = _write_reopen_config(resource, phase='verify', source=project,
+                                              reopened=reopened_project, inventory=inventory,
+                                              marker=after_inventory,
+                                              registered_action_id=reopen_action_id)
+    verify_dispatch = gate.step('OSC dispatch of A01 verify-tabs ReaScript action',
+                                lambda: _dispatch_reopen_action(args.controller, reopen_command_id))
+    deadline = time.monotonic() + 25
+    while not after_inventory.is_file() and time.monotonic() < deadline:
+        time.sleep(0.1)
+    if not after_inventory.is_file():
+        raise TimeoutError('native verify-tabs action did not write its inventory')
+    native_inventory = _read_inventory(after_inventory)
+    process_after = gate.step('isolated profile process identity after fresh-tab reopen',
                               lambda: _profile_process(resource))
-    session = adapter.observe_session()
-    if session.path != project or process_after['pid'] != process['pid']:
-        raise RuntimeError('fresh reopen changed the session path or REAPER process identity')
-    if session.token == evidence['steps']['session_before']['token']:
-        raise RuntimeError('session binding token did not change across fresh tab close/reopen')
+    if process_after['pid'] != process['pid']:
+        raise RuntimeError('fresh tab reopen changed the REAPER process identity')
     drums_final = adapter.read_stem(session, drums.guid, drum_layout['item_guid'])
     bass_final = adapter.read_track(adapter.observe_session(), bass.guid)
     keys_final = adapter.read_volume_envelope(adapter.observe_session(), keys.guid,
                                               start_sec=1, end_sec=3)
+    reopened_bindings = {}
+    for track_name, track_guid in (('Keys', keys.guid), ('Bass', bass.guid), ('Drums', drums.guid)):
+        item_guid = next(item['item_guid'] for item in layout if item['name'] == track_name)
+        reopened_bindings[track_name] = dict(adapter.read_stem(
+            adapter.observe_session(), track_guid, item_guid))
+    binding_comparison = {name: {'before': before, 'after': reopened_bindings[name]}
+                          for name, before in reopen_source_bindings.items()}
+    for name, before in reopen_source_bindings.items():
+        after = reopened_bindings[name]
+        if any(after[key] != before[key] for key in (
+                'item_guid', 'take_guid', 'source_path', 'position_sec', 'length_sec')):
+            raise RuntimeError(f'{name} item/take/source binding changed in byte-identical reopen copy')
     if (drums_final['source_path'] != independent['source_path']
             or not math.isclose(bass_final['volume'], bass_manual['volume'], rel_tol=1e-8)
             or keys_final['points'] != keys_manual['points']
             or sha256(project) != before_reopen_hash):
         raise RuntimeError('save/reopen readback differs from the accepted disposable state')
-    record('save_reopen', {'returncode': reopen.returncode, 'stderr': reopen.stderr[-1000:],
-                           'project_sha256': before_reopen_hash,
+    record('save_reopen', {'open_action_dispatch': open_dispatch,
+                           'verify_action_dispatch': verify_dispatch,
+                           'open_config': str(config_path),
+                           'verify_config': str(verify_config_path),
+                           'source_project': str(project),
+                           'reopened_copy': str(reopened_project),
+                           'source_project_sha256': before_reopen_hash,
+                           'reopened_copy_sha256': sha256(reopened_project),
+                           'source_tabs_after': native_inventory,
+                           'prior_tabs_preserved': True,
+                           'binding_comparison': binding_comparison,
                            'session': _session_identity(session), 'drums': drums_final,
                            'bass': bass_final, 'keys_envelope': keys_final})
 
     rendered = gate.step('headless stereo export', lambda:
-        _render(project, render_resource, args.render_timeout))
+        _render(reopened_project, render_resource, args.render_timeout))
     audio = gate.step('mix and aligned stem fidelity check', lambda: _analyze_exports(
-        args.controller, project, render_resource / 'reaper.ini', render_wav))
-    evidence.update(ended_at_utc=utc_now(), ok=True, final_project_sha256=sha256(project),
+        args.controller, reopened_project, render_resource / 'reaper.ini', render_wav))
+    evidence.update(ended_at_utc=utc_now(), ok=True,
+                    final_project_sha256=sha256(reopened_project),
                     render=rendered, export_analysis=audio,
                     qualification_note='Disposable Gate A workflow only; not Gate C musical acceptance.')
     _new_json(report, evidence)
@@ -789,29 +986,14 @@ def main(argv: list[str] | None = None) -> int:
             result = run_qualification(args)
         print(json.dumps(plain(result), indent=2, sort_keys=True))
         return 0
-    except Exception as error:
+    except BaseException as error:
         if getattr(args, 'command', None) == 'run':
             try:
                 root = Path(os.path.abspath(args.root))
                 if root.is_dir() and root.is_relative_to(BASE) and not root.is_symlink():
-                    journal = root / 'a01-focus.jsonl'
-                    manifest_path = root / 'a01-manifest-profile.json'
-                    manifest = (json.loads(manifest_path.read_text(encoding='utf-8'))
-                                if manifest_path.is_file() else {})
-                    project = Path(manifest['project']) if manifest.get('project') else None
-                    failure = {
-                        'schema': 'llm-studio.reaper-gate-a01-failure.v1',
-                        'at_utc': utc_now(), 'root': str(root), 'ok': False,
-                        'error': f'{type(error).__name__}: {error}',
-                        'traceback': traceback.format_exc(),
-                        'focus_journal': str(journal) if journal.is_file() else None,
-                        'focus_journal_sha256': sha256(journal) if journal.is_file() else None,
-                        'project': str(project) if project else None,
-                        'project_sha256_at_failure':
-                            sha256(project) if project and project.is_file() else None,
-                        'effects_and_receipts': 'See durable a01-focus.jsonl started/finished and qualification-checkpoint events.',
-                    }
-                    _new_json(root / 'a01-failure.json', failure)
+                    failure_path = root / 'a01-failure.json'
+                    if not os.path.lexists(failure_path) and not os.path.lexists(root / 'a01-evidence.json'):
+                        _new_json(failure_path, _failure_record(root, error))
             except Exception as evidence_error:
                 print(f'Could not write supplemental failure record: {type(evidence_error).__name__}: {evidence_error}',
                       file=sys.stderr)

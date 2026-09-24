@@ -371,13 +371,48 @@ frontmost-app observations before, during, and after the operation; REAPER and
 the macOS login window both fail the gate. The runner writes `a01-focus.jsonl`
 per-step receipts and focus samples, `a01-evidence.json` on success, and
 `a01-failure.json` plus the journal hash on an incomplete run. It refuses to
-reuse a fixture or its evidence paths.
+reuse a fixture or its evidence paths. Save/reopen uses a byte-identical RPP
+copy opened in a new tab. The profile preparation installs a fixed native
+ReaScript helper. Before `run`, load that helper from the Actions list and
+confirm its exact `RS...` command ID appears once in that profile's
+`reaper-kb.ini`; the runner refuses to continue without this registration.
+At run start, John launches its read-only identify phase once. The helper
+records the exact integer returned by `get_action_context()` for OSC action
+dispatch. Each following API step starts with a different app frontmost; the
+runner sends `/action <native-command-id>` through the pinned controller and
+requires both a native stage marker and bridge session readback before it
+continues. The pre-open script writes its tab inventory before
+`Main_openProject`; a second dispatched stage verifies that prior tabs remain
+present with their prior dirty flags and state-change counts. It never invokes
+a `.lua` path through REAPER's command line and never closes a tab during this
+check. A UDP send receipt by itself is not a pass.
+
+The first bounded reopen-protocol attempt used the CLI form
+`REAPER -cfgfile <profile>/reaper.ini -nonewinst -noactivate <helper.lua>`.
+REAPER logged the Lua path as `media:/.../a01-reopen-open.lua`; the expected
+native stage marker was absent. That invocation did not exercise the helper.
+The disposable source RPP, reopen copy, and a separate pre-cleanup snapshot
+all had SHA256
+`de32b029be0115cb74ff8fbc95ea36944d6882af5f3faff2f1d66416745f9f33`.
+The profile was `/private/tmp/llm-studio-reaper/a01-runner-verified-20260924/profile/resource/reaper.ini`.
+The process launched with it remains PID 27434 because the approved protocol
+cannot read its active tab inventory or dirty flags. The snapshot is
+`/private/tmp/llm-studio-reaper/a01-runner-verified-20260924/session-before-cleanup-snapshot.RPP`.
+No close was attempted. The OSC action-ID path above is a corrected runner
+design, not yet native-qualified; A01 remains open pending a tab inventory and
+one bounded marker/readback test.
 
 After profile preparation, John must start REAPER with that exact profile and
 the copied `session.RPP`, load `Scripts/agent_bridge.lua` from the Actions list,
-and complete any first-run audio-device selection. Keep only the disposable
-project tab open. The automated run must begin with a user application other
-than REAPER frontmost. During the explicit manual handoff, move Bass to about
+load `Scripts/llm_studio_a01_reopen.lua` from the Actions list, and complete
+any first-run audio-device selection. Record the helper's `RS...` command ID
+as the exact row in this profile's `reaper-kb.ini`; `run` validates the row
+and prompts for the read-only identify launch that captures its integer OSC
+command ID.
+Keep the prepared project active and leave every other tab untouched. The
+automated run must begin with
+a user application other than REAPER frontmost. During the explicit manual
+handoff, move Bass to about
 −2.99 dB while retaining pan −0.2, and move the existing Keys volume point at
 2.0 seconds to about −28 dB while retaining the 1s and 3s boundary points. Then
 switch to another app before returning to the runner. Do not treat setup or
