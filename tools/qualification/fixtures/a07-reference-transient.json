@@ -1,0 +1,19 @@
+{
+  "fixture_id": "llm-studio-a07-sc-reference-transient-v1",
+  "renderer": "SuperCollider scsynth non-realtime",
+  "synthdef": {
+    "channels": [
+      "Impulse.ar(frequency=0, phase=1)",
+      "Delay1.ar(Impulse.ar(frequency=0, phase=1))",
+      "DC.ar(1) gated for 10ms after synth execution"
+    ],
+    "purpose": "Separate score/block scheduling offset from signal-path delay and verify decoded WAV frame indexing"
+  },
+  "sample_rates": [44100, 48000],
+  "block_size": 64,
+  "event_times_s": [0.25, 0.5, 1.0, 1.25, 1.5, 1.75],
+  "alignment_sample_rate": 48000,
+  "reference_clip_preroll_frames": 64,
+  "reference_clip_postroll_frames": 64,
+  "measurement": "first exactly nonzero IEEE float frame in each decoded WAV channel"
+}

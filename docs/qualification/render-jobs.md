@@ -1,7 +1,9 @@
 # Render job qualification (issue #15)
 
-Date: 2026-09-22. Host: Apple Silicon Mac, macOS 26.5.2. Status: **native
-worker isolation and publication pass; full Gate B acceptance remains open**.
+Date: 2026-09-24. Host: Apple Silicon Mac, macOS 26.5.2. Status: **native
+worker isolation and publication pass; offline A07 reference calibration
+passed for the pinned SuperCollider NRT path; REAPER import readback and full
+Gate B acceptance remain open**.
 
 The runner at `tools/qualification/render_job_native.py` ran the pinned,
 producer-approved catalogue instruments inside `RenderService` worker processes.
@@ -49,9 +51,54 @@ within one output sample without per-stem normalization. This tests the
 algorithm and mixed layouts, **not** the required A07 real-renderer calibration.
 The catalogue's 33-sample SuperCollider and 57-sample Dexed onset measurements
 are thresholded musical attacks, not isolated reference transients. They must
-not be used as automatic latency compensation. A real impulse-like instrument
-or plugin path, its patch-specific latency measurement, and a REAPER import
-readback are still needed to establish A07 without double compensation.
+not be used as automatic latency compensation. The custom SuperCollider
+reference path measured below covers renderer scheduling for that fixture;
+it does not establish latency for the catalogue's musical patches or their
+REAPER import behavior.
+
+### 2026-09-24 SuperCollider reference transient
+
+The new `tools/qualification/a07_reference_transient.py` runner uses the
+fixture `tools/qualification/fixtures/a07-reference-transient.json` with
+SuperCollider 3.14.1 (build `426edf6`), Supriya 26.9b0, and Python 3.14.6.
+It renders a custom three-channel reference SynthDef through the real
+non-realtime `scsynth -N` engine at 44.1 and 48 kHz. Channel one is a
+single-sample impulse, channel two is the same impulse delayed by `Delay1`,
+and channel three is a brief DC execution marker. The runner inspects the
+decoded IEEE-float WAV frames directly, without an amplitude threshold.
+
+Across six requested times at each sample rate, the impulse and execution
+marker always began at the same decoded frame, while `Delay1` began exactly
+one sample later. This independently verifies WAV frame indexing and shows
+that the observed offset comes from score event scheduling, not extra signal
+delay inside this SynthDef. With block size 64, the score-to-audio offsets
+were -17, -34, -4, -21, -38 and -55 samples at 44.1 kHz, and -32, 0, 0, -32,
+0 and -32 samples at 48 kHz. Thus this schedule behavior is block-quantized
+and varies with the requested sample position; the catalogue attack
+thresholds remain unsuitable as calibration.
+
+For an end-to-end offline alignment check, the runner extracts a 128-frame
+mono clip around each decoded reference impulse, retaining 64 frames of
+pre-roll. It records the event's measured offset within that clip as 64
+samples and passes the real decoded samples to `align_stems`. All 12 events
+align to their declared 48 kHz reference frames with zero-sample peak error.
+This representation uses a nonnegative within-clip offset and places the
+tested events after timeline zero. It does not adjust or normalize samples.
+The clip is cropped around an already measured impulse, so its 64-sample
+within-clip offset is not a reusable renderer-latency value for arbitrary
+event times or musical patches. The measured score offset varies with block
+phase and must not be replaced with one fixed compensation value.
+Audio hashes and measurements are retained under
+`/private/tmp/llm-studio-gate-b-a07-reference-evidence-final4/`. The decoded
+float sample hashes are `16950ba49f90650a19a6bb8d064ced00dec1c6c852e5bfcbe3b141f07ffe2830`
+at 44.1 kHz and `313d90907bcb676ce68c1881b18bcc87a053396eace6e837260cc640c4829707`
+at 48 kHz.
+
+This qualifies SuperCollider's reference scheduling path and the offline
+alignment calculation for this fixture only. It does not measure Dexed's
+patch-specific latency or establish that REAPER imported media at the same
+sample frame. A07 remains pending until the disposable REAPER import readback
+confirms the calibrated reference events without additional compensation.
 
 To repeat native worker evidence, run from the repository root with a new
 result directory each time:
