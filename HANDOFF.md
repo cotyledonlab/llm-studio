@@ -1,4 +1,33 @@
-# Current handoff — issue #11 draft, live checks pending
+# Current handoff — Gate A and B slices merged; acceptance remains open
+
+## 2026-09-24 merged implementation slices
+
+PR #37 merged into `main` as `53669f1d` and PR #35 merged as `aced0931`.
+Both were squash merges of their bounded implementation slices. Issues #11 and
+#15 remain open. Their remote feature branches were deleted after the merges;
+the local checkout was fast-forwarded to `main` at `aced0931`. The dated notes
+below describe the state at the time of each qualification run; references to
+draft PRs there are historical.
+
+The #37 review found no remaining code blocker for its A4 replacement/export
+scope. Its local suite passed 119 tests with 10 skips. Full Gate A remains
+no-go: A01 is partial under the complete core-tracer requirement, and the old
+45-second renderer timeout remains unexplained. Do not close #11 or use Gate A
+as a completed prerequisite for #16 yet.
+
+The #35 review found no remaining code blocker for its render-job scope after
+process-group cleanup and catalogue fixture-contract fixes. Reconciliation with
+the merged #37 code was clean; the combined local suite passed 146 tests with
+11 skips. A fresh pinned SuperCollider run passed success, crash, timeout, and
+cancellation outcomes. Full Gate B remains open: A07 needs real reference
+transient calibration and REAPER import readback; host memory-pressure admission
+and worker count need measurement during REAPER playback, including xruns and
+responsiveness. Do not close #15 or use Gate B as a completed prerequisite for
+#16 yet.
+
+Keep live REAPER ownership and the older producer handoff tab as described
+below. The next work should target the remaining gate checks without rerunning
+accepted A4 replacement on a changed tab.
 
 ## 2026-09-23 REAPER instance cleanup
 
