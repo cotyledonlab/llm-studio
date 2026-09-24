@@ -1,14 +1,13 @@
-# Current handoff — Gate A and B slices merged; acceptance remains open
+# Current handoff — Gate A and B follow-ups in draft PRs; acceptance remains open
 
 ## 2026-09-24 parallel continuation status
 
 Draft PRs #38, #39, and #40 carry today's follow-up work; all three branches
-are pushed and remain open for review. PR #38 is `codex/gate-a-issue11` at
-`dfc569dc1a620d3b3e885555fe7e73935e1828cb`; PR #39 is
+are pushed and remain open for review. PR #38 is `codex/gate-b-host-monitor`
+at `1c00a4a06c98fbe706d1b9ef7a4bdacffe18bc9c`; PR #39 is
 `codex/gate-b-a07-reference-transient` at
 `9dcb326b560aca9fa7187d7643d33587638e8c33`; PR #40 is
-`codex/gate-b-host-monitor` at
-`1c00a4a06c98fbe706d1b9ef7a4bdacffe18bc9c`.
+`codex/gate-a-issue11` at `dfc569dc1a620d3b3e885555fe7e73935e1828cb`.
 
 Gate B now has bounded real SuperCollider reference scheduling and disposable
 REAPER import evidence. Across 12 requested events at 44.1 and 48 kHz, score
