@@ -105,6 +105,23 @@ def test_import_stages_immutable_copy_and_validates_actual_item(session, tmp_pat
         adapter.import_stem(session, '{a}', stem)
 
 
+def test_import_accepts_rpp_position_serialization_but_rejects_drift(session, tmp_path):
+    stem = tmp_path / 'render.wav'
+    stem.write_bytes(b'fixture')
+    requested = 0.24854166666666666
+    returned_position = [0.24854167]
+    def send(op, params):
+        return {'ok': True, 'result': {
+            'durable_path': params['stem_path'], 'track_guid': '{a}',
+            'item_guid': '{item}', 'length_sec': 1,
+            'position_sec': returned_position[0]}}
+    adapter = ReaperStudioAdapter(send, disposable_roots=(tmp_path,))
+    assert adapter.import_stem(session, '{a}', stem, position_sec=requested)['position_sec'] == 0.24854167
+    returned_position[0] = requested + 1e-6
+    with pytest.raises(ReaperAdapterError, match='media readback'):
+        adapter.import_stem(session, '{a}', stem, position_sec=requested)
+
+
 def test_import_rejects_media_symlink_and_producer_project(session, tmp_path):
     source = tmp_path / 'source.wav'
     source.write_bytes(b'fixture')
@@ -145,6 +162,65 @@ def test_replace_stem_uses_exact_item_observation_and_checks_readback(session, t
     adapter._bridge_send = lambda op, params: {'ok': True, 'result': {
         'observed': {**baseline, 'source_path': params['stem_path'], 'take_guid': '{wrong}'},
         'old_source_path': '/old.wav'}}
+    with pytest.raises(ReaperAdapterError, match='readback differs'):
+        adapter.replace_stem(session, '{a}', baseline, stem)
+
+
+def test_replace_stem_allows_only_rpp_position_serialization(session, tmp_path):
+    stem = tmp_path / 'replacement.wav'
+    stem.write_bytes(b'new fixture')
+    baseline = {'track_guid': '{a}', 'item_guid': '{item}', 'take_guid': '{take}',
+                'source_path': '/old.wav', 'source_type': 'WAVE',
+                'position_sec': 0.24854166666666666, 'length_sec': 2,
+                'channels': 1, 'sample_rate': 48000, 'state_change_count': 5}
+    def send(op, params):
+        if op == 'studio.read_stem':
+            return {'ok': True, 'result': baseline}
+        observed = {**baseline, 'source_path': params['stem_path'],
+                    'position_sec': 0.24854167, 'state_change_count': 6}
+        return {'ok': True, 'result': {'observed': observed,
+            'old_source_path': baseline['source_path']}}
+    adapter = ReaperStudioAdapter(send, disposable_roots=(tmp_path,))
+    assert adapter.replace_stem(session, '{a}', baseline, stem)['observed']['position_sec'] == 0.24854167
+
+    def drifted(op, params):
+        if op == 'studio.read_stem':
+            return {'ok': True, 'result': baseline}
+        observed = {**baseline, 'source_path': params['stem_path'],
+                    'position_sec': baseline['position_sec'] + 1e-6}
+        return {'ok': True, 'result': {'observed': observed,
+            'old_source_path': baseline['source_path']}}
+    adapter._bridge_send = drifted
+    with pytest.raises(ReaperAdapterError, match='readback differs'):
+        adapter.replace_stem(session, '{a}', baseline, stem)
+
+
+def test_replace_stem_allows_only_rpp_length_serialization(session, tmp_path):
+    stem = tmp_path / 'replacement.wav'
+    stem.write_bytes(b'new fixture')
+    baseline = {'track_guid': '{a}', 'item_guid': '{item}', 'take_guid': '{take}',
+                'source_path': '/old.wav', 'source_type': 'WAVE',
+                'position_sec': 0.24854166666666666,
+                'length_sec': 0.0028958333333333, 'channels': 1,
+                'sample_rate': 48000, 'state_change_count': 5}
+    def send(op, params):
+        if op == 'studio.read_stem':
+            return {'ok': True, 'result': baseline}
+        observed = {**baseline, 'source_path': params['stem_path'],
+                    'length_sec': 0.00289583, 'state_change_count': 6}
+        return {'ok': True, 'result': {'observed': observed,
+            'old_source_path': baseline['source_path']}}
+    adapter = ReaperStudioAdapter(send, disposable_roots=(tmp_path,))
+    assert adapter.replace_stem(session, '{a}', baseline, stem)['observed']['length_sec'] == 0.00289583
+
+    def drifted(op, params):
+        if op == 'studio.read_stem':
+            return {'ok': True, 'result': baseline}
+        observed = {**baseline, 'source_path': params['stem_path'],
+                    'length_sec': baseline['length_sec'] + 1e-6}
+        return {'ok': True, 'result': {'observed': observed,
+            'old_source_path': baseline['source_path']}}
+    adapter._bridge_send = drifted
     with pytest.raises(ReaperAdapterError, match='readback differs'):
         adapter.replace_stem(session, '{a}', baseline, stem)
 
