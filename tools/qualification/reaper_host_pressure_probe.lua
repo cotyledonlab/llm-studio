@@ -5,6 +5,25 @@
 local section = "LLMStudioHostPressure"
 local stopped_key = "stop"
 local probe_path = reaper.GetResourcePath() .. "/llm-studio-host-pressure.jsonl"
+local project, project_file = reaper.EnumProjects(-1, "")
+project_file = project_file or ""
+local project_name = project and reaper.GetProjectName(project) or ""
+local track_guids = {}
+for index = 0, reaper.CountTracks(project) - 1 do
+  local track = reaper.GetTrack(project, index)
+  local _, guid = reaper.GetSetMediaTrackInfo_String(track, "GUID", "", false)
+  track_guids[#track_guids + 1] = guid
+end
+local function quote(value)
+  return '"' .. tostring(value or ""):gsub('\\', '\\\\'):gsub('"', '\\"') .. '"'
+end
+local function session_fields()
+  local ids = {}
+  for index, guid in ipairs(track_guids) do ids[index] = quote(guid) end
+  return string.format('"project_file":%s,"project_name":%s,"track_count":%d,"track_guids":[%s],"play_state":%d,"play_position_s":%.6f',
+    quote(project_file), quote(project_name), #track_guids, table.concat(ids, ","),
+    reaper.GetPlayStateEx(project), reaper.GetPlayPositionEx(project))
+end
 local file = io.open(probe_path, "a")
 if not file then
   reaper.ShowConsoleMsg("LLM Studio host-pressure probe could not open " .. probe_path .. "\n")
@@ -25,8 +44,8 @@ if previous_audio ~= 0 and previous_current_ms ~= nil then
 end
 
 file:write(string.format(
-  '{"sample_epoch":%d,"probe_running":false,"audio_xrun_ms":%d,"media_xrun_ms":%d,"current_ms":%d,"audio_xrun_events":0,"media_xrun_events":0,"latest_audio_xrun_age_ms":%s,"loop_gap_ms":0,"max_loop_gap_ms":0}\n',
-  os.time(), previous_audio, previous_media, previous_current_ms or 0,
+  '{"sample_epoch":%d,"probe_running":false,%s,"audio_xrun_ms":%d,"media_xrun_ms":%d,"current_ms":%d,"audio_xrun_events":0,"media_xrun_events":0,"latest_audio_xrun_age_ms":%s,"loop_gap_ms":0,"max_loop_gap_ms":0}\n',
+  os.time(), session_fields(), previous_audio, previous_media, previous_current_ms or 0,
   previous_audio_age_ms and tostring(previous_audio_age_ms) or "null"
 ))
 file:flush()
@@ -35,8 +54,8 @@ local function sample()
   if reaper.GetExtState(section, stopped_key) == "1" then
     local audio_xrun, media_xrun, current_ms = reaper.GetUnderrunTime()
     file:write(string.format(
-      '{"sample_epoch":%d,"probe_running":false,"audio_xrun_ms":%d,"media_xrun_ms":%d,"current_ms":%d,"audio_xrun_events":%d,"media_xrun_events":%d,"latest_audio_xrun_age_ms":null,"loop_gap_ms":0,"max_loop_gap_ms":%.3f}\n',
-      os.time(), audio_xrun, media_xrun, current_ms, audio_events, media_events, maximum_loop_gap_ms
+      '{"sample_epoch":%d,"probe_running":false,%s,"audio_xrun_ms":%d,"media_xrun_ms":%d,"current_ms":%d,"audio_xrun_events":%d,"media_xrun_events":%d,"latest_audio_xrun_age_ms":null,"loop_gap_ms":0,"max_loop_gap_ms":%.3f}\n',
+      os.time(), session_fields(), audio_xrun, media_xrun, current_ms, audio_events, media_events, maximum_loop_gap_ms
     ))
     file:flush()
     file:close()
@@ -74,8 +93,8 @@ local function sample()
     audio_age = tostring(audio_age_value)
   end
   file:write(string.format(
-    '{"sample_epoch":%d,"probe_running":true,"audio_xrun_ms":%d,"media_xrun_ms":%d,"current_ms":%d,"audio_xrun_events":%d,"media_xrun_events":%d,"latest_audio_xrun_age_ms":%s,"loop_gap_ms":%.3f,"max_loop_gap_ms":%.3f}\n',
-    os.time(), audio_xrun, media_xrun, current_ms, audio_events, media_events,
+    '{"sample_epoch":%d,"probe_running":true,%s,"audio_xrun_ms":%d,"media_xrun_ms":%d,"current_ms":%d,"audio_xrun_events":%d,"media_xrun_events":%d,"latest_audio_xrun_age_ms":%s,"loop_gap_ms":%.3f,"max_loop_gap_ms":%.3f}\n',
+    os.time(), session_fields(), audio_xrun, media_xrun, current_ms, audio_events, media_events,
     audio_age, gap_ms, maximum_loop_gap_ms
   ))
   file:flush()
