@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 from contextlib import nullcontext
 import json
+import math
 import os
 import platform
 import signal
@@ -36,7 +37,10 @@ def _fault_worker(job: RenderJob, output: Path) -> None:
             time.sleep(0.1)
 
 
-def _job(instrument_id: str, mode: str, root: Path, index: int) -> RenderJob:
+def _job(
+    instrument_id: str, mode: str, root: Path, index: int, *,
+    deadline_timeout_s: float | None = None,
+) -> RenderJob:
     instrument = Catalogue.packaged().get(instrument_id)
     fixture = instrument.fixture
     now = datetime.now(timezone.utc)
@@ -54,7 +58,10 @@ def _job(instrument_id: str, mode: str, root: Path, index: int) -> RenderJob:
         tail_s=fixture["tail_s"],
         deterministic_seed=instrument.data["state"].get("seed"),
         limits=ResourceLimits(cpu_seconds=20, memory_bytes=2 * 1024**3),
-        deadline_at=now + timedelta(seconds=3 if mode == "hang" else 15),
+        deadline_at=now + timedelta(seconds=(
+            deadline_timeout_s if deadline_timeout_s is not None
+            else (3 if mode == "hang" else 15)
+        )),
         result_path=root / f"{mode}-{index}",
         payload={
             "instrument_id": instrument_id,
@@ -72,6 +79,31 @@ def _wait_marker(path: Path, service: RenderService, job_id: str) -> None:
         if state.terminal or time.monotonic() >= stop:
             raise RuntimeError(f"worker did not start: {job_id} ({state.value})")
         time.sleep(0.005)
+
+
+def _wait_concurrent(service, jobs: list[RenderJob], timeout_s: float):
+    """Wait one bounded interval for all jobs, including admission cooldowns."""
+    stop = time.monotonic() + timeout_s
+    statuses = []
+    for job in jobs:
+        remaining = stop - time.monotonic()
+        if remaining <= 0:
+            states = [service.status(item.job_id).state.value for item in jobs]
+            raise TimeoutError(
+                f"concurrent qualification exceeded its {timeout_s:.1f}s "
+                f"wait budget (queued/running states: {states}); admission may "
+                "still be holding workers after an xrun cooldown"
+            )
+        try:
+            statuses.append(service.wait(job.job_id, timeout=remaining))
+        except TimeoutError as exc:
+            states = [service.status(item.job_id).state.value for item in jobs]
+            raise TimeoutError(
+                f"concurrent qualification exceeded its {timeout_s:.1f}s "
+                f"wait budget (queued/running states: {states}); admission may "
+                "still be holding workers after an xrun cooldown"
+            ) from exc
+    return statuses
 
 
 def _run(instrument_id: str, root: Path, *, admission_check=None) -> dict:
@@ -125,13 +157,19 @@ def _run(instrument_id: str, root: Path, *, admission_check=None) -> dict:
 
 def _concurrent(
     instrument_ids: tuple[str, str], root: Path, *, max_workers: int = 2,
-    admission_check=None,
+    admission_check=None, wait_timeout_s: float = 60.0,
 ) -> list[dict]:
-    jobs = [_job(instrument_id, "success", root, index + 10) for index, instrument_id in enumerate(instrument_ids)]
+    jobs = [
+        _job(
+            instrument_id, "success", root, index + 10,
+            deadline_timeout_s=wait_timeout_s + 5.0,
+        )
+        for index, instrument_id in enumerate(instrument_ids)
+    ]
     with RenderService(max_workers=max_workers, admission_check=admission_check) as service:
         for job in jobs:
             service.submit(job, _fault_worker)
-        statuses = [service.wait(job.job_id, timeout=20) for job in jobs]
+        statuses = _wait_concurrent(service, jobs, wait_timeout_s)
     if admission_check is None and any(status.state is not JobState.SUCCEEDED for status in statuses):
         raise AssertionError(f"concurrent render failed: {statuses}")
     if all(status.worker_pid is not None for status in statuses) and len({status.worker_pid for status in statuses}) != 2:
@@ -164,11 +202,17 @@ def main() -> None:
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--concurrent-with")
     parser.add_argument("--max-workers", type=int, choices=(1, 2), default=2)
+    parser.add_argument(
+        "--concurrent-timeout-s", type=float, default=60.0,
+        help="overall bounded wait for both concurrent jobs (default: 60s; exceeds the 30s xrun cooldown)",
+    )
     parser.add_argument("--reaper-resource-path", type=Path)
     parser.add_argument("--pressure-evidence", type=Path)
     args = parser.parse_args()
     if args.max_workers <= 0:
         parser.error("--max-workers must be positive")
+    if not math.isfinite(args.concurrent_timeout_s) or args.concurrent_timeout_s <= 0:
+        parser.error("--concurrent-timeout-s must be finite and positive")
     if bool(args.reaper_resource_path) != bool(args.pressure_evidence):
         parser.error("--reaper-resource-path and --pressure-evidence must be supplied together")
 
@@ -192,10 +236,12 @@ def main() -> None:
                 "host": platform.platform(),
                 "python": platform.python_version(),
                 "max_workers": args.max_workers,
+                "concurrent_timeout_s": args.concurrent_timeout_s,
                 "pressure_monitor": str(args.pressure_evidence.resolve()),
                 "concurrent": _concurrent(
                     (args.instrument_id, args.concurrent_with), root,
                     max_workers=args.max_workers, admission_check=admission_check,
+                    wait_timeout_s=args.concurrent_timeout_s,
                 ),
             }
         else:
@@ -203,9 +249,10 @@ def main() -> None:
             if args.concurrent_with:
                 report["concurrent"] = _concurrent(
                     (args.instrument_id, args.concurrent_with), args.root.resolve(),
-                    max_workers=args.max_workers,
+                    max_workers=args.max_workers, wait_timeout_s=args.concurrent_timeout_s,
                 )
                 report["max_workers"] = args.max_workers
+                report["concurrent_timeout_s"] = args.concurrent_timeout_s
     (args.root / "qualification.json").write_text(
         json.dumps(report, indent=2, sort_keys=True) + "\n"
     )
